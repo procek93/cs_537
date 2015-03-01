@@ -75,10 +75,10 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 
-  int tickets;	// number of tickets assigned to this process
+  long tickets;	// number of tickets assigned to this process
   long pass;	// current pass value for the process
   long stride;	// stride value
-  int n_schedule;	// number of times chosen for scheduling
+  long n_schedule;	// number of times chosen for scheduling
 };
 
 // Process memory is laid out contiguously, low addresses first:

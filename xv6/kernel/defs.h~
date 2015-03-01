@@ -111,6 +111,7 @@ void            wakeup(void*);
 void            yield(void);
 int 		num_procs(void);
 int		fill_pstat(void *);
+struct pstat*   get_lproc(void);
 
 
 // swtch.S
@@ -176,13 +177,13 @@ int             copyout(pde_t*, uint, void*, uint);
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
 
 //define boundary ticket amounts
-static const int MINTIX = 10;
-static const int MAXTIX = 150;
+static const long MINTIX = 10;
+static const long MAXTIX = 150;
 
 //define the lcm of all possible ticket amounts
-static const int LCM = 3603600;
+static const long LCM = 3603600;
 
 //define integer limit
-static const int INT_MAX = 
+static const long LONG_MAX = (2^((sizeof(long)*8)))-1;
 
 #endif // _DEFS_H_

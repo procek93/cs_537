@@ -89,7 +89,7 @@ found:
   //set default number times scheduled
   p->n_schedule = 0;
 
-   //***STARVATION PREVENTION***
+  //***STARVATION PREVENTION***
   //on process creation, process will always take 
   //the smallest pass value among all existing processes
   //unless the process is the only one in existance.
@@ -298,29 +298,16 @@ wait(void)
   }
 }
 
-// Per-CPU process scheduler.
-// Each CPU calls scheduler() after setting itself up.
-// Scheduler never returns.  It loops, doing:
-//  - choose a process to run
-//  - swtch to start running that process
-//  - eventually that process transfers control
-//      via swtch back to the scheduler.
-void
-scheduler(void)
+
+struct proc * get_lproc(void)
 {
- struct proc *ps;
-  struct proc *p;
-  proc = NULL;
-  int foundlock = 0;
-
-  for(;;){
-    // Enable interrupts on this processor.
-    sti();
-
-    // Loop over process table looking for process thats not 
-    // and has minimum pass value
-    acquire(&ptable.lock);
+	struct proc * ps;
+	struct proc * p = NULL;
+	
+	int foundlock = 0;
+	
 	for(ps = ptable.proc; ps < &ptable.proc[NPROC]; ps++){
+
 		if(ps->state == RUNNABLE)
 		{
 			//found first runnable state, use this
@@ -339,50 +326,71 @@ scheduler(void)
 		}
 	}
 
-	//if we found a runnable state with min pass value
-	//run it
-	if(p != NULL)
+	return p;
+}
+
+// Per-CPU process scheduler.
+// Each CPU calls scheduler() after setting itself up.
+// Scheduler never returns.  It loops, doing:
+//  - choose a process to run
+//  - swtch to start running that process
+//  - eventually that process transfers control
+//      via swtch back to the scheduler.
+void
+scheduler(void)
+{
+ struct proc *p;
+ struct proc *ps;
+
+  for(;;){
+    // Enable interrupts on this processor.
+    sti();
+
+    // Loop over process table looking for process to run.
+    acquire(&ptable.lock);
+
+    p = get_lproc();
+
+    if(p != NULL)
+    {
+      	//but first check for overflow
+	//based on following calculation:
+	//if limit is 5, and we have x + y, suppose x and y are 5
+	//x + y will overflow...verification:
+	// limit(5) - y(5) = 0:::: if x > (lim(5) - y(5))
+	//aka, if 5 > 0, overflow happens
+	if(((p->pass) > 0) && ((p->stride) > (LONG_MAX - (p->pass))))
 	{
-		//update pass value before context switch occurs
-		//but first check for overflow
-		//based on following calculation:
-		//if limit is 5, and we have x + y, suppose x and y are 5
-		//x + y will overflow...verification:
-		// limit(5) - y(5) = 0:::: if x > (lim(5) - y(5))
-		//aka, if 5 > 0, overflow happens
-		if(((p->pass) > 0) && ((p->stride) > (LONG_MAX - (p->pass))))
+		//overflow is going to occur, zero out all pass values
+		for(ps = ptable.proc; ps < &ptable.proc[NPROC]; ps++)
 		{
-			//overflow is going to occur, zero out all pass values
-			for(ps = ptable.proc; ps < &ptable.proc[NPROC]; ps++)
+			if(ps->state != UNUSED)
 			{
-				if(ps->state != UNUSED)
-				{
-					ps->pass = 0;
-				}
+				ps->pass = 0;
 			}
 		}
-		else//no overflow, increment pass
-		{
-			p->pass += p->stride;
-		}
-	
-		// Switch to chosen process.  It is the process's job
-		// to release ptable.lock and then reacquire it
-		// before jumping back to us.
-		proc = p;
-		switchuvm(p);
-		p->state = RUNNING;
-		swtch(&cpu->scheduler, proc->context);
-		switchkvm();
-
-		//after process was given run time on cpu, increment its scheduled count
-		p->n_schedule++;
-
-		// Process is done running for now.
-		// It should have changed its p->state before coming back.
-		proc = 0;
 	}
-	release(&ptable.lock);
+	else//no overflow, increment pass
+	{
+		p->pass += p->stride;
+	}
+
+      // Switch to chosen process.  It is the process's job
+      // to release ptable.lock and then reacquire it
+      // before jumping back to us.
+      proc = p;
+      switchuvm(p);
+      p->state = RUNNING;
+      swtch(&cpu->scheduler, proc->context);
+      switchkvm();
+
+      p->n_schedule++;
+
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
+      proc = 0;
+    }
+    release(&ptable.lock);
 
   }
 }

@@ -105,7 +105,7 @@ int
 sys_settickets(void)
 {
 	int tickets;
-
+	long tix;
 	//use accessory function to take in usermode passed in value
 	//and assign it to tickets defined above
 	if(argint(0, &tickets) < 0)
@@ -114,8 +114,10 @@ sys_settickets(void)
 		return -1;
 	}
 
+	tix = (long)tickets;
+
 	//return -1 if ticket boundary cases are violated
-	if((tickets < MINTIX) || (tickets > MAXTIX) || (tickets % 10 != 0))
+	if((tix < MINTIX) || (tix > MAXTIX) || (tix % 10 != 0))
 	{
 		//error
 		return -1;
@@ -123,10 +125,10 @@ sys_settickets(void)
 
 	//otherwise, ticket amount is fair
 	//assign tickets to process currently running
-	proc->tickets = tickets;
+	proc->tickets = tix;
 	
 	//set stride based on LCM division
-	proc->stride = (LCM / tickets);
+	proc->stride = (LCM / tix);
 
 	return 0;
 }
