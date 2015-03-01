@@ -1,0 +1,21 @@
+Name: Peter Procek
+CSL-ID: procek
+Name: 
+CSL-ID:  
+
+Implementation Details:
+
+The kernel modifications have been done to proc.c, Syscall.c, sysfunc.h, sysproc.c, syscall.h, user.h and usys.S. This kernel modification allows you to get the amount of processes regardless of state (except unused). The main driving function in proc.c goes through the process table and checks that its not unused, if it is not, it increments a counter and returns the amount of processes. It will throw errors if a process is in a state other than expected. This function is then defined in defs.h which also links to sysproc.c which calls this function. The flow of user to kernel is the following:
+
+-->user calls user function to get processes->
+-->usys.S creates multiple global definitions for these system calls
+	-->usys passes associated function index for getting proc nums thru eax
+		-->this index is in syscall.h, available to user/kernel
+	-->usys calls a trap
+**control now passed to kernel side**
+-->Syscall.c gets the value in eax and indexes into
+			 the proper function call w/it
+		-->handler function pointers defined in sysfunc.h
+-->sysproc.c calls function pointed to in syscall.c
+	--function calls function defined in proc.c through defs.h
+		
