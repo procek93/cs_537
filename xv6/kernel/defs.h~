@@ -110,6 +110,8 @@ int             wait(void);
 void            wakeup(void*);
 void            yield(void);
 int 		num_procs(void);
+int		fill_pstat(void *);
+
 
 // swtch.S
 void            swtch(struct context**, struct context*);
@@ -179,5 +181,8 @@ static const int MAXTIX = 150;
 
 //define the lcm of all possible ticket amounts
 static const int LCM = 3603600;
+
+//define integer limit
+static const int INT_MAX = 
 
 #endif // _DEFS_H_

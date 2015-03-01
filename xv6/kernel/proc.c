@@ -34,7 +34,11 @@ static struct proc*
 allocproc(void)
 {
   struct proc *p;
+  struct proc *ps;//pass search pointer to processes
   char *sp;
+
+  //variable used to mark that first unused state has been seen
+  int foundlock = 0;
 
   acquire(&ptable.lock);
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
@@ -68,6 +72,54 @@ found:
   p->context = (struct context*)sp;
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
+
+  //set up parameters for stride scheduling
+  //process gets mintix on default creation
+  p->tickets = MINTIX;
+
+  //set default stride value
+  p->stride = (LCM / MINTIX);
+
+  //set default pass value
+  //even though starvation prevention mechanism will be in place
+  //initiate pass to 0 for the initial case
+  //ex.)only one process exists
+  p->pass = 0;
+
+  //set default number times scheduled
+  p->n_schedule = 0;
+
+   //***STARVATION PREVENTION***
+  //on process creation, process will always take 
+  //the smallest pass value among all existing processes
+  //unless the process is the only one in existance.
+  //**Iterate through the table, and for each unused state
+  //**look at its pass value and see if smaller then last process
+  acquire(&ptable.lock);
+  for(ps = ptable.proc; ps < &ptable.proc[NPROC] ; ps++)
+  {
+    //only pay attention to used processes AND IGNORE THE PROCESS WE'RE COMPARING
+    if((ps->state != UNUSED) && ((ps->pid) != (p->pid)))
+    {
+	//use simple lookahead by one algorithm to find min pass
+	//always take first value on first iteration
+	if(foundlock == 0)
+	{
+		//found lock is zero on start, once first used state
+		//is seen, take its pass value as the basis for 
+		//iterative comparisons
+		p->pass = (ps->pass);
+		foundlock = 1;
+	}
+	else
+	if((ps->pass) < (p->pass))
+	{
+		//take newest smallest found pass value
+		p->pass = (ps->pass);
+	}
+     }
+  }  
+  release(&ptable.lock);
 
   return p;
 }
@@ -256,32 +308,81 @@ wait(void)
 void
 scheduler(void)
 {
+ struct proc *ps;
   struct proc *p;
+  proc = NULL;
+  int foundlock = 0;
 
   for(;;){
     // Enable interrupts on this processor.
     sti();
 
-    // Loop over process table looking for process to run.
+    // Loop over process table looking for process thats not 
+    // and has minimum pass value
     acquire(&ptable.lock);
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
+	for(ps = ptable.proc; ps < &ptable.proc[NPROC]; ps++){
+		if(ps->state == RUNNABLE)
+		{
+			//found first runnable state, use this
+			//as basis for comparison...Will also choose first
+			//process found if all pass values are 0
+			if(foundlock == 0)
+			{
+				p = ps;
+				foundlock = 1;
+			}
+			else//otherwise search for runnable process with lowest pass
+			if((ps->pass) < (p->pass))
+			{
+				p = ps;
+			}
+		}
+	}
 
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-      swtch(&cpu->scheduler, proc->context);
-      switchkvm();
+	//if we found a runnable state with min pass value
+	//run it
+	if(p != NULL)
+	{
+		//update pass value before context switch occurs
+		//but first check for overflow
+		//based on following calculation:
+		//if limit is 5, and we have x + y, suppose x and y are 5
+		//x + y will overflow...verification:
+		// limit(5) - y(5) = 0:::: if x > (lim(5) - y(5))
+		//aka, if 5 > 0, overflow happens
+		if(((p->pass) > 0) && ((p->stride) > (LONG_MAX - (p->pass))))
+		{
+			//overflow is going to occur, zero out all pass values
+			for(ps = ptable.proc; ps < &ptable.proc[NPROC]; ps++)
+			{
+				if(ps->state != UNUSED)
+				{
+					ps->pass = 0;
+				}
+			}
+		}
+		else//no overflow, increment pass
+		{
+			p->pass += p->stride;
+		}
+	
+		// Switch to chosen process.  It is the process's job
+		// to release ptable.lock and then reacquire it
+		// before jumping back to us.
+		proc = p;
+		switchuvm(p);
+		p->state = RUNNING;
+		swtch(&cpu->scheduler, proc->context);
+		switchkvm();
 
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      proc = 0;
-    }
-    release(&ptable.lock);
+		//after process was given run time on cpu, increment its scheduled count
+		p->n_schedule++;
+
+		// Process is done running for now.
+		// It should have changed its p->state before coming back.
+		proc = 0;
+	}
+	release(&ptable.lock);
 
   }
 }
@@ -395,10 +496,45 @@ static void
 wakeup1(void *chan)
 {
   struct proc *p;
+  struct proc *ps; //pass value search process pointer
+  int foundlock = 0;
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+  {
     if(p->state == SLEEPING && p->chan == chan)
+    {
       p->state = RUNNABLE;
+
+      //***STARVATION PREVENTION***
+      //on process wake, process will always take 
+      //the smallest pass value among all existing processes
+      //**Iterate through the table, and for each unused state
+      //**look at its pass value and see if smaller then last process
+      for(ps = ptable.proc; ps < &ptable.proc[NPROC] ; ps++)
+      {
+        //only pay attention to used processes and ignore the awoken process
+        if((ps->state != UNUSED) && ((ps->pid) != (p->pid)))
+        {
+	   //use simple lookahead by one algorithm to find min pass
+	   //always take first value on first iteration
+	   if(foundlock == 0)
+	   {
+		 //found lock is zero on start, once first used state
+		//is seen, take its pass value as the basis for 
+		//iterative comparisons
+		p->pass = (ps->pass);
+		foundlock = 1;
+	   }
+	   else
+	   if((ps->pass) < (p->pass))
+	   {
+	 	//take newest smallest found pass value
+		p->pass = (ps->pass);
+	   }
+         }
+      }  
+    }
+  }
 }
 
 // Wake up all processes sleeping on chan.
@@ -473,8 +609,66 @@ procdump(void)
 int		
 fill_pstat(void * pstat)
 {
-//do something
-return 0;
+	struct proc *p;
+
+	//create a pstat pointer
+	struct pstat * procs;
+	
+	//variable to iterate procs pstat array
+	int offset = 0;
+
+	int x = 0;
+
+	//cast user fed pointer
+	procs = (struct pstat *)pstat;
+
+	acquire(&ptable.lock);
+	for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+	{
+		//if the state is not used
+		if(p->state == UNUSED)
+		{
+			//get the struct and fill out its variables
+			(procs + offset)->inuse = 0;
+			(procs + offset)->pid = 0;
+
+			//because we're dealing with arrays and not pointers, we need to fill
+			//the name using a manual for loop
+			for(x = 0; x < 16; x++)
+			{
+				(procs + offset)->name[x] = (p->name[x]);
+			}
+
+			(procs + offset)->tickets = 0;
+			(procs + offset)->pass = 0;
+			(procs + offset)->stride = 0;
+			(procs + offset)->n_schedule = 0;	
+		}
+		else//process slot in ptable is in use so fill info appropriately
+		{
+			//get the struct and fill out its variables
+			(procs + offset)->inuse = 1;
+			(procs + offset)->pid = (p->pid);
+
+			//because we're dealing with arrays and not pointers, we need to fill
+			//the name using a manual for loop
+			for(x = 0; x < 16; x++)
+			{
+				(procs + offset)->name[x] = (p->name[x]);
+			}
+
+			(procs + offset)->tickets = (p->tickets);
+			(procs + offset)->pass = (p->pass);
+			(procs + offset)->stride = (p->stride);
+			(procs + offset)->n_schedule = (p->n_schedule);
+		}
+
+		//next pstat entry
+		offset++;
+	}
+	release(&ptable.lock);
+
+	return 0;
 }
 
 

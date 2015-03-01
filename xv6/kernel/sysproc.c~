@@ -153,4 +153,7 @@ sys_getpinfo(void)
 	{
 		return -1;
 	}
+
+	//return 0 on succes
+	return 0;
 }

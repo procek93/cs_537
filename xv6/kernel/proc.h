@@ -76,8 +76,8 @@ struct proc {
   char name[16];               // Process name (debugging)
 
   int tickets;	// number of tickets assigned to this process
-  int pass;	// current pass value for the process
-  int stride;	// stride value
+  long pass;	// current pass value for the process
+  long stride;	// stride value
   int n_schedule;	// number of times chosen for scheduling
 };
 
