@@ -38,7 +38,7 @@ main(int argc, char *argv[])
 				printf(1, "pass %d; \n", t[i].pass);
 			}
 		}
-		sleep(1000);
+		sleep(10);
 	}
 	
 	exit();

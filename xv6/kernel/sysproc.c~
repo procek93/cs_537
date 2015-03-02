@@ -117,7 +117,7 @@ sys_settickets(void)
 	tix = (long)tickets;
 
 	//return -1 if ticket boundary cases are violated
-	if((tickets < MINTIX) || (tickets > MAXTIX) || (tickets % 10 != 0))
+	if((tix < MINTIX) || (tix > MAXTIX) || (tix % 10 != 0))
 	{
 		//error
 		return -1;
@@ -128,7 +128,7 @@ sys_settickets(void)
 	proc->tickets = tix;
 	
 	//set stride based on LCM division
-	proc->stride = (LCM / tix);
+	proc->stride = ((160-tix)/10);
 
 	return 0;
 }

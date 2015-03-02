@@ -78,16 +78,7 @@ found:
   p->tickets = MINTIX;
 
   //set default stride value
-  p->stride = (LCM / MINTIX);
-
-  //set default pass value
-  //even though starvation prevention mechanism will be in place
-  //initiate pass to 0 for the initial case
-  //ex.)only one process exists
-  p->pass = 0;
-
-  //set default number times scheduled
-  p->n_schedule = 0;
+  p->stride = ((160-MINTIX)/10);
 
   //***STARVATION PREVENTION***
   //on process creation, process will always take 
