@@ -38,7 +38,6 @@ main(int argc, char *argv[])
 				printf(1, "pass %d; \n", t[i].pass);
 			}
 		}
-		sleep(10);
 	}
 	
 	exit();
@@ -67,7 +66,7 @@ void fork_kids(void)
 			}
 			else
 			{
-				if(settickets(100) < 0)
+				if(settickets(50) < 0)
 				{
 					exit();	
 				}

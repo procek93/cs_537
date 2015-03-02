@@ -78,7 +78,7 @@ found:
   p->tickets = MINTIX;
 
   //set default stride value
-  p->stride = ((160-MINTIX)/10);
+  p->stride = (LCM/MINTIX);
 
   //***STARVATION PREVENTION***
   //on process creation, process will always take 

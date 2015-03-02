@@ -184,6 +184,6 @@ static const long MAXTIX = 150;
 static const long LCM = 3603600;
 
 //define integer limit
-static const long LONG_MAX = (2^((sizeof(long)*8)))-1;
+static const long LONG_MAX = 2147483647;
 
 #endif // _DEFS_H_

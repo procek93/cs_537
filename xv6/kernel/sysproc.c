@@ -128,7 +128,7 @@ sys_settickets(void)
 	proc->tickets = tix;
 	
 	//set stride based on LCM division
-	proc->stride = ((160-tix)/10);
+	proc->stride = (LCM/tix);
 
 	return 0;
 }
