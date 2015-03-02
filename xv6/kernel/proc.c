@@ -500,10 +500,10 @@ wakeup1(void *chan)
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
   {
+    foundlock = 0;
+
     if(p->state == SLEEPING && p->chan == chan)
     {
-      p->state = RUNNABLE;
-
       //***STARVATION PREVENTION***
       //on process wake, process will always take 
       //the smallest pass value among all existing processes
@@ -530,8 +530,9 @@ wakeup1(void *chan)
 	 	//take newest smallest found pass value
 		p->pass = (ps->pass);
 	   }
-         }
-      }  
+        }
+      } 
+      p->state = RUNNABLE;
     }
   }
 }

@@ -78,16 +78,7 @@ found:
   p->tickets = MINTIX;
 
   //set default stride value
-  p->stride = (LCM / MINTIX);
-
-  //set default pass value
-  //even though starvation prevention mechanism will be in place
-  //initiate pass to 0 for the initial case
-  //ex.)only one process exists
-  p->pass = 0;
-
-  //set default number times scheduled
-  p->n_schedule = 0;
+  p->stride = (LCM/MINTIX);
 
   //***STARVATION PREVENTION***
   //on process creation, process will always take 
@@ -509,10 +500,10 @@ wakeup1(void *chan)
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
   {
+    foundlock = 0;
+
     if(p->state == SLEEPING && p->chan == chan)
     {
-      p->state = RUNNABLE;
-
       //***STARVATION PREVENTION***
       //on process wake, process will always take 
       //the smallest pass value among all existing processes
@@ -539,8 +530,9 @@ wakeup1(void *chan)
 	 	//take newest smallest found pass value
 		p->pass = (ps->pass);
 	   }
-         }
-      }  
+        }
+      } 
+      p->state = RUNNABLE;
     }
   }
 }
