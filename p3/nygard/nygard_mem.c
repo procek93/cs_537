@@ -1,203 +1,180 @@
 /******************************************************************************
- * MODIFIED BY: Graham Nygard, Section 1
- * FILENAME: 	mem.c
- * AUTHOR:   	cherin@cs.wisc.edu <Cherin Joseph>
- * DATE:     	20 Nov 2013
- * PROVIDES: 	Contains a set of library functions for memory allocation
+ * FILENAME: mem.c
+ * AUTHOR:   procek@wisc.edu <Peter Procek>, gnygard@wisc.edu <Graham Nygard>
+ * DATE:     15 March 2015
+ * PROVIDES: Contains a set of library functions for memory 
  * *****************************************************************************/
 
-#include <stdio.h>
+#include "mymem.h"
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <string.h>
-#include "mem.h"
 
-/* this structure serves as the header for each block */
-typedef struct block_hd{
-  /* The blocks are maintained as a linked list */
-  /* The blocks are ordered in the increasing order of addresses */
-  struct block_hd* next;
+//create variable holder for slabSize request
+static int g_slabSize;
 
-  /* size of the block is always a multiple of 4 */
-  /* ie, last two bits are always zero - can be used to store other information*/
-  /* LSB = 0 => free block */
-  /* LSB = 1 => allocated/busy block */
+//variable to hold padded allocation size
+//global to do arithmetic for slab allocator location
+static int alloc_size;
 
-  /* For free block, block size = size_status */
-  /* For an allocated block, block size = size_status - 1 */
+//flag to signal if we are to use slab allocation
+//states:
+//0 - slab not requested
+//1 - slab requested
+//2 - slab failed
+//*global declaration for optional thread optimizing*
+static int slab_fl = 0;
 
-  /* The size of the block stored here is not the real size of the block */
-  /* the size stored here = (size of block) - (size of header) */
-  int size_status;
+//top of slab list & NF REGION
+void * slab_head = NULL;
+void * nf_head = NULL;
 
-}block_header;
+//Headers for freelist for each region
+FreeHeader * slab_head_l = NULL;
+FreeHeader * nf_head_l = NULL;
 
-/* Global variable - This will always point to the first block */
-/* ie, the block with the lowest address */
-block_header* list_head = NULL;
-
+//last accessible address possible (SEG_FAULT_CHECK)
+void * EOL = NULL;
 
 /* Function used to Initialize the memory allocator */
 /* Not intended to be called more than once by a program */
 /* Argument - sizeOfRegion: Specifies the size of the chunk which needs to be allocated */
 /* Returns 0 on success and -1 on failure */
-int Mem_Init(int sizeOfRegion)
+void * Mem_Init(int sizeOfRegion, int slabSize)
 {
   int pagesize;
-  int padsize;
-  int fd;
-  int alloc_size;
+  int padding;
   void* space_ptr;
+
+  //invoke static to retain value b/t invokations
   static int allocated_once = 0;
   
-  if(0 != allocated_once)
+  //if this method invoked more than once or if request innapropriate size
+  //then error
+  if(0 != allocated_once || sizeOfRegion <= 0)
   {
-    fprintf(stderr,"Error:mem.c: Mem_Init has allocated space during a previous call\n");
-    return -1;
-  }
-  if(sizeOfRegion <= 0)
-  {
-    fprintf(stderr,"Error:mem.c: Requested block size is not positive\n");
-    return -1;
+    return NULL;
   }
 
-  /* Get the pagesize */
-  pagesize = getpagesize();
+  //save the special slabSize
+  g_slabSize = slabSize;
 
-  /* Calculate padsize as the padding required to round up sizeOfRegio to a multiple of pagesize */
-  padsize = sizeOfRegion % pagesize;
-  padsize = (pagesize - padsize) % pagesize;
+  /*create padding in requested memory as to provide natural alignment
+  /-->natural alignment incase user reqests memory not a multiple of pagesize*/
 
-  alloc_size = sizeOfRegion + padsize;
+  //Get pagesize (portable)
+  pagesize = sysconf(_SC_PAGESIZE);
 
-  /* Using mmap to allocate memory */
-  fd = open("/dev/zero", O_RDWR);
-  if(-1 == fd)
-  {
-    fprintf(stderr,"Error:mem.c: Cannot open /dev/zero\n");
-    return -1;
-  }
-  space_ptr = mmap(NULL, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+  // pad user requested memory to be multiple of page size
+  padding = sizeOfRegion % pagesize;
+  padding = (pagesize - padding) % pagesize;
+  alloc_size = sizeOfRegion + padding;
+
+  // use mmap to allocate memory 
+  // **non backed memory region
+  space_ptr = mmap(NULL, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   if (MAP_FAILED == space_ptr)
   {
-    fprintf(stderr,"Error:mem.c: mmap cannot allocate space\n");
-    allocated_once = 0;
-    return -1;
+    //mapped memory allocation failed
+    return NULL;
   }
   
+  //flag that we mapped to memory once now
   allocated_once = 1;
+
+  /*CREATE ALL MARKERS AND POINTERS TO CRITICAL SECTIONS*/
+  //mark begining of each allocation type region
+  slab_head = space_ptr;
+  nf_head = space_ptr;
+
+  //return begining of the large free block, which will
+  //also serve as the begining of the slab block
+  slab_head_l = (FreeHeader *)space_ptr;
+  //only block in free list
+  slab_head_l->next = NULL;
+  //*SIZE STORED IN BLOCK EXCLUDES HEADER SPACE
+  slab_head_l->length = (alloc_size/4) - (int)sizeof(FreeHeader);
+
+  //first 25% of memory dedicated to slab
+  //so list for next_fit allocation comes next
+  nf_head_l = (FreeHeader *)(space_ptr + (alloc_size/4));
+  nf_head_l->next = NULL;
+  nf_head_l->length = ((3*alloc_size)/4) - (int)sizeof(FreeHeader);
+
+  //mark end of list (final addressable memory slot)
+  EOL = space_ptr + (alloc_size - 1);
   
-  /* To begin with, there is only one big, free block */
-  list_head = (block_header*)space_ptr;
-  list_head->next = NULL;
-  /* Remember that the 'size' stored in block size excludes the space for the header */
-  list_head->size_status = alloc_size - ( (int)sizeof(block_header) );
-  
-  return 0;
+  //return the addr of the entire piece of memory
+  return space_ptr;
+}
+/*function is in charge of doling out memory.*/ 
+/*provides ptr to the requested chunk of memory.*/
+/*returns ptr to adr of requested block on success.*/
+/*returns Null ptr on failure*/
+void * Mem_Alloc(int size){
+
+	int padding;
+	int alloc_size;
+	int req_size = size;
+	
+	//sanity check request size
+	if(req_size < 0)
+	{
+		return NULL;
+	}
+
+	//check if the user requested a slab
+	if(req_size == g_slabSize)
+	{
+		//slab requested, attempt slab allocation
+		if(slab_alloc(&slab_fl) == NULL)
+		{
+			//error
+			return NULL;
+		}
+	}
+
+	//if the user requested a next fit piece of
+	//memory, make it 16-byte aligned
+	if(slab_fl == 0)
+	{
+		padding = req_size % 16;
+		padding = (16 - padding) % 16;
+		alloc_size = req_size + padding;
+	}	
+
+	//attempt next fit allocation if either user passed
+	//in non slab request size, or slab allocation failed
+	if(slab_fl == 0)
+	{
+		if(nf_alloc(alloc_size) == NULL)
+		{
+			//not enough contiguous space
+			return NULL;
+		}
+	}
+
+	else
+	if(slab_fl == 2)
+	{
+		if(nf_alloc(req_size) == NULL)
+		{
+			//not enough contiguous space
+			return NULL;
+		}
+	}
+		
 }
 
+static void * slab_alloc(void * head, int * fl){
 
-/* Function for allocating 'size' bytes. */
-/* Returns address of allocated block on success */
-/* Returns NULL on failure */
-/* Here is what this function should accomplish */
-/* - Check for sanity of size - Return NULL when appropriate */
-/* - Round up size to a multiple of 4 */
-/* - Traverse the list of blocks and allocate the first free block which can accommodate the requested size */
-/* -- Also, when allocating a block - split it into two blocks when possible */
-/* Tips: Be careful with pointer arithmetic */
-void* Mem_Alloc(int size)
-{
-  /* Your code should go in here */
+}
 
-  /* Local variables */ 
-  char         *next_ptr;   
-  block_header *curr_block;
-  block_header *next_block;
+static void * nf_alloc(void * head, int size){
 
-  int block_size;           /* Integer variable for determing 
-  			       size of block to be allocated*/
-  
-  int free_remaining;	    /* Integer variable for determing 
-  			       size of block left over when 
-			       allocation results in a block split*/
-
-  curr_block = list_head;   /* Initialize the current block 
-  			       for list traversal */
-
-  /* Determine if the requested size is valid */
-  if ( size <= 0 ) return NULL;
-
-  /* Round size up to a multiple of 4 (for alignment) */
-  while ( size % 4 != 0) {
-	size++;
-  }
-
-  /* Initialize the number of bytes required for successful allocation */
-  block_size = size + (int)sizeof(block_header);
-
-  /* Traverse the linked list of memory blocks until a block large enough to
-   * fulfill the requested size is found, and split the block accordingly. */
-  while (curr_block != NULL) {
-	
-	/* If the current block is allocated, move to the next block */
-  	if ( (curr_block->size_status) % 2 != 0 ) {
-		curr_block = curr_block->next;
-  	}
-
-        /* If the current block is too small, move to the next block */
-	else if ( curr_block->size_status < size ) {
-		curr_block = curr_block->next;
-	}
-
-        /* If the current block is a perfect match, mark as allocated */
-	else if ( curr_block->size_status == size ) {							  	
-		curr_block->size_status |= 0x00000001;
-
-		return curr_block;
-	}
-
-        /* If the current block is large enough for allocation, split
-	 * the blocks into two, consecutive memory blocks */
-  	else if ( curr_block->size_status >= block_size ) {
-
-		/* Establish a memory block of the remaining free size
-		 * after the split, and give the appropriate fields */
-		free_remaining 		 = curr_block->size_status - block_size;
-
-		next_ptr 		 = (char*) curr_block + block_size;
-
-		next_block		 = (block_header*) next_ptr;
-
-		next_block->next	 = curr_block->next;
-
-		next_block->size_status  = free_remaining;
-		
-		/* Establish the memory block to be returned as the newly
-		 * allocated block of the requested size, and give the 
-		 * appropriate fields before returning */
-		curr_block->next	 = next_block;
-
-		curr_block->size_status  = size;
-		
-		curr_block->size_status |= 0x00000001;
-		
-		curr_block->next 	 = next_block;	
-
-		return curr_block;
-  	}
-	
-	/* Update the current block to be checked */
-	else {
-		curr_block = curr_block->next;
-	}
-  }
-
-  return NULL; /* If this is reached, there was not a large enough
-  		  memory block to fulfill the requested size */
 }
 
 /* Function for freeing up a previously allocated block */
@@ -205,105 +182,206 @@ void* Mem_Alloc(int size)
 /* Returns 0 on success */
 /* Returns -1 on failure */
 /* Here is what this function should accomplish */
-/* - Return -1 if ptr is NULL */
+/* - No-op if ptr is NULL */
 /* - Return -1 if ptr is not pointing to the first byte of a busy block */
 /* - Mark the block as free */
 /* - Coalesce if one or both of the immediate neighbours are free */
 int Mem_Free(void *ptr)
 {
-  /* Your code should go in here */
+  // Cast the pointer
+  ptr = (AllocatedHeader*) ptr;
+
+  if ( ptr == NULL ) return 0;		/* Check if ptr parameter is NULL,
+  					 * and simply return */
+
+  // It is an error (segmentation fault) to attempt a free outside 
+  // of the originally allocated Mem_Init region
+  if ( (ptr < slab_head) || (ptr > EOL) ) 
+  {
+	printf(stdout, "SEGFAULT\n");
+	return -1;
+  }
+
+  // Trying to free an unallocated block is an error
+  if ( ptr->magic != MAGIC )
+  {
+	return -1;
+  }
+
+  if ( ptr >= nf_head )
+  {
+	return nf_free(ptr);
+
+  } else {
+	return slab_free(ptr);
+  }
+
+///////////////////////// START OF THE CS354 STUFF //////////////////////////////
+
+}
+
+static int slab_free(void * ptr){
 
   /* Local variables */
-  block_header *curr_block = NULL;	/* Variable pointers to block_headers */
-  block_header *next_block = NULL;
-  block_header *free_block = NULL;
-  block_header *prev_block = NULL;
+  FreeHeader* curr = NULL;	/* Variable pointers to block_headers */
+  FreeHeader* prev = NULL;
 
-  int block_size;			/* Integer variable for determing 
-  					   size of block to be coalesced*/
+  int slab_length;			/* Integer variable for determing 
+  					   size of block to be coalesced */  
 
-  if ( ptr == NULL ) return -1;		/* Check if ptr parameter is valid,
-  					 * and return appropriate value */
-
-  /* Initialize curr_block for ptr validity testing */
-  curr_block = list_head;
-
-  /* Traverse the linked list of memory blocks to determine if ptr is a valid
-   * pointer to a memory block that has been allocated by Mem_Alloc() */
-  while ( curr_block != ptr ) {
-	
-	curr_block = curr_block->next;
-
-	if ( curr_block == NULL ) return -1;
-  }
+  // Zero out the magic number 
+  ptr = (AllocatedHeader*) ptr;
+  ptr->magic = NULL;
 
   /* Initialize variable pointers to block_headers */
 
-  curr_block = list_head;
+  curr = slab_head_l;
 
-  next_block = curr_block->next;
+  slab_length = ptr->length;
 
-  free_block = (block_header*)ptr;
+  ptr = (FreeHeader*) ptr;
 
-  /* Traverse the linked list of memory blocks until the desired block to be
-   * freed is found, and determine if it is able to be coalesced w/ neighbors*/ 
-  while ( curr_block != NULL ) {
-
-	if (curr_block == free_block) {
-
-		/* Check if ptr already points to a 
-		 * free block, and return appropriate value */
-		if (curr_block->size_status % 2 == 0) return -1;
-                
-		/* If the block to be freed is another block's next field
-		 * determine if this block is free and coalesce accordingly */
-		if (prev_block != NULL) {
-			
-			if (prev_block->size_status % 2 == 0) {
-
-				block_size 	= curr_block->size_status +
-				    	     	  (int)sizeof(block_header);
-
-				prev_block->next 	 = next_block;
-
-				prev_block->size_status += block_size;
-
-				curr_block = prev_block;
-			}
-		}
-
-		/* If the block to be freed has another block as its next field 
-		 * determine if that block is free and coalesce accordingly */
-		if (next_block != NULL) {
-
-			if (next_block->size_status % 2 == 0) {
-			
-				block_size 	 = next_block->size_status +
-			    	     	           (int)sizeof(block_header);
-
-				curr_block->next 	 = next_block->next;
-
-				curr_block->size_status += block_size;
-			}
-		}
-		
-		/* Mark the newly freed block from 'Busy' to 'Free' */
-		curr_block->size_status &= 0xfffffffe;
-		
-		return 0;
-	}
-
-	else {
-		/* Update the current block to be checked 
-		 * and its corresponding neighbors*/
-		prev_block = curr_block;
-  		curr_block = next_block;
-		next_block = next_block->next;
-  	}
+  /* Slab insertion into the free list below */
+  
+  // Traverse the free list to determine where the newly freed slab belongs
+  while ( curr < ptr )
+  {
+  	prev = curr;
   }
   
-  return -1; /* Should never reach */
-}
+  if ( ptr < slab_head_l ) {
+		
+	// Set the next open block
+	ptr->next = curr;
+
+	// Set the length of the free block
+	ptr->length = slab_length;
+
+	// Update the head of the free list
+	slab_head_l = ptr;
+
+  } else {
+
+	// Link the slab into the free list
+	prev->next = ptr;
+	ptr->next = curr;
+	
+	// Set the slabs length (not really needed)
+	ptr->length = slab_lengthl
+  }
+  
+  return 0;
+
+} // End of slab_free
+
+static int nf_free(void * ptr){
+
+  /* Local variables */
+  FreeHeader* curr = NULL;	/* Variable pointers to block_headers */
+  FreeHeader* next = NULL;
+  FreeHeader* prev = NULL;
+
+  int add_length;			/* Integer variable for determing 
+  					   size of block to be coalesced */
+  
+  int ptr_length;			/* Integer variable for holding the
+  					   length of the newly freed block */
+
+  // Zero out the magic number
+  ptr = (AllocatedHeader*) ptr;
+  ptr->magic = NULL;
+
+  /* Initialize variable pointers to block_headers */
+
+  curr = nf_head_l;
+
+  next = curr->next;
+
+  ptr_length = ptr->length;
+
+  ptr = (FreeHeader*) ptr;
+
+  /* Coalescing code below */
+  
+  if ( ptr < curr ) {
+
+	// If the freed block can be coalesced with the head of the free list
+	if ( (ptr + ptr_length + (int)sizeof(FreeHeader)) == curr )
+	{	
+		// Set the next open block
+		ptr->next = next;
+
+		// Set the length of the free block
+		add_length = (curr->length + (int)sizeof(FreeHeader));
+		ptr->length = add_length + ptr_length;
+		
+	} else {
+		
+		// Set the next open block
+		ptr->next = curr;
+
+		// Set the length of the free block
+		ptr->length = ptr_length;
+	}
+
+	// Update the head of the free list
+	nf_head_l = ptr;
+
+  } else {
+
+	// Traverse the free list to determine where the newly freed
+	// block will be placed. Coalescing will occur if the specified
+	// block neighbors another free block
+	while ( curr < ptr )
+	{
+	  	prev = curr;
+		curr = next;
+	}
+
+	// Check for prev block coalescing
+	if ( (prev + prev->length + (int)sizeof(FreeHeader)) == ptr )
+	{
+		// Set the length of the free block
+		add_length = (ptr_length + (int)sizeof(FreeHeader));
+		prev->length += add_length;
+		ptr_length = ptr->length;
+
+		// Update the pointer for further coalescing
+		ptr = prev;
+
+		// No need to update the next pointer
+		
+	} else {
+		
+		// Set the next open block
+		prev->next = ptr;
+	} 
+
+	// Check for next block coalescing
+	if ( (ptr + ptr_length + (int)sizeof(FreeHeader)) == curr )
+	{	
+
+		// Set the next open block
+		ptr->next = next;
+
+		// Set the length of the free block
+		add_length = (curr->length + (int)sizeof(FreeHeader));
+		ptr->length += add_length;
+	
+	} else {
+		
+		// Set the next open block
+		ptr->next = curr;
+
+		// Set the free block's length
+		ptr->length = ptr_length;
+	}
+  }  
+
+  // Return success
+  return 0;
+
+} // End of nf_free
 
 /* Function to be used for debug */
 /* Prints out a list of all the blocks along with the following information for each block */
@@ -317,7 +395,10 @@ int Mem_Free(void *ptr)
 void Mem_Dump()
 {
   int counter;
-  block_header* current = NULL;
+
+  FreeHeader* current = NULL;
+  AllocatedHeader CURRENT = NULL:
+
   char* t_Begin = NULL;
   char* Begin = NULL;
   int Size;
