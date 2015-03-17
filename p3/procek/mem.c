@@ -34,6 +34,8 @@ static int slab_chunk;
 //*global declaration for optional thread optimizing*
 static int slab_fl = 0;
 
+static int nf_once = 0;
+
 //top of slab list & NF REGION
 void * slab_head = NULL;
 void * nf_head = NULL;
@@ -94,7 +96,7 @@ void * Mem_Init(int sizeOfRegion, int slabSize)
   /*CREATE ALL MARKERS AND POINTERS TO CRITICAL SECTIONS*/
   //mark begining of each allocation type region
   slab_head = space_ptr;
-  nf_head = (space_ptr + (alloc_size/4));
+  nf_head = (char *)space_ptr + (alloc_size/4));
 
   //return begining of the large free block, which will
   //also serve as the begining of the slab block
@@ -106,12 +108,13 @@ void * Mem_Init(int sizeOfRegion, int slabSize)
 
   //first 25% of memory dedicated to slab
   //so list for next_fit allocation comes next
-  nf_head_l = (FreeHeader *)(space_ptr + (alloc_size/4));
-  nf_head_l->next = NULL;
+  nf_head_l = ((char *)space_ptr + (alloc_size/4));
+  //CREATE A CIRCULAR QUEUE
+  nf_head_l->next = nf_head_l;
   nf_head_l->length = ((3*alloc_size)/4) - (int)sizeof(FreeHeader);
 
   //mark end of list (final addressable memory slot)
-  EOL = space_ptr + (alloc_size - 1);
+  EOL = (char *)space_ptr + (alloc_size - 1);
 
   //now segment the slab_space
   generate_slab();
@@ -206,7 +209,7 @@ static void generate_slab(void){
 	//segment a slab in the event we only have 
 	//enough space for one slab to begin with
 	//*keep from making part of NF_alloc a slab
-	tracker += slab_chunk;
+	tracker = (char *)tracker + slab_chunk;
 
 	//begin chaining together freespace
 	while(tracker != nf_head)
@@ -224,7 +227,7 @@ static void generate_slab(void){
 		prev = next;
 
 		//check if we have space for more slabs
-		tracker += slab_chunk;
+		tracker = (char*)tracker + slab_chunk;
 	}
 
 	//reached end of slab region
@@ -275,12 +278,70 @@ static void * slab_alloc(int * fl){
 		*fl = 1;
 	}
 
-	clear_space = ((void*)aloc_location) + (int)sizeof(FreeHeader);
+	clear_space = (void*)((char *)aloc_location + (int)sizeof(FreeHeader));
 	return memset(clear_space, 0, g_slabSize);
 
 }
 
 static void * nf_alloc(int size){
+
+	int request_size = size;
+	void * split_loc = NULL;
+	void * h_begin = NULL;
+	void * begin = NULL;
+	static FreeHeader * last_location = NULL;
+	FreeHeader * self_catch = NULL;
+	int leftover = 0;
+	int space = 0;
+
+	//kick start the searching procedure. On very first
+	//run, start search from top of free list head
+	//and all subsequent searches will start
+	//from node in front of last allocated
+	if(nf_once == 0)
+	{
+		last_location = nf_head_l;
+		nf_once++;
+	}
+
+	//idea is to loop until you end up back where you started
+	//self_catch will be NULL, then after entering the loop
+	//it will grab the address of the free block following the last
+	//allocated block (last_location)
+
+	/*search through memory to find unallocated block using next fit*/
+	/*allocate if possible*/
+	while((last_location != self_catch) && (last_location != NULL))
+	{
+		//premptively calculate possible memory that'd be left if we allocate here
+		leftover = (last_location->length) - request_size;
+		//memory left after we'd allocate the header + request (aka the possible next split free block)
+		space = leftover - (int)sizeof(FreeHeader);
+		
+		//we will hit only free blocks on iterations, point is to find
+		//the adequate size
+		if((last_location->length) >= request_size)//enough memory to meet just the request?
+		{
+			if(leftover > (int)sizeof(FreeHeader))//is freespace-request enough to fit header too?
+			{
+				if(
+			
+
+		
+		
+
+	
+
+	
+	
+	
+	
+	
+	
+
+	
+
+	
 
 }
 
