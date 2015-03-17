@@ -199,25 +199,26 @@ int Mem_Free(void *ptr)
 	return -1;
   }
 
-
+  // The pointer refers to a block within the next fit region
   if ( ptr >= nf_head )
   {
         // Check if the specified block is allocated
         if ( (AllocatedHeader*) ptr->magic == MAGIC )
         {
-		return nf_free(ptr);
+		return nf_free((AllocatedHeader*)ptr);
 	
 	// Trying to free an unallocated block results in error
         } else {
 		return -1;
 	}
-
+ 
+  // The pointer refers to a block within the slab region
   } else {
 
 	// Check if the specified block is a valid slab	
   	if ( (FreeHeader*) ptr->length == g_slabeSize)
 	{
-		return slab_free(ptr);
+		return slab_free((FreeHeader*)ptr);
 
 	// Trying to free an invalid slab results in error
 	} else {
@@ -236,14 +237,9 @@ static int slab_free(void * ptr){
   FreeHeader* prev = NULL;
   FreeHeader* next = NULL;
 
-  int slab_length;			/* Integer variable for determing 
-  					   size of block to be coalesced */  
-
   /* Initialize variable pointers to block_headers */
 
   curr = slab_head_l;
-
-  slab_length = ptr->length;
 
   ptr = (FreeHeader*) ptr;
 
@@ -253,7 +249,6 @@ static int slab_free(void * ptr){
   // head of the free list and return
   if (curr == NULL) {
 	slab_head_l = ptr;
-	ptr->next = MAGIC;
 	return 0;
   }
 
@@ -264,9 +259,9 @@ static int slab_free(void * ptr){
 	curr = next;
 	
 	// If the freed slab is at the end of the list, append it
-	if (curr == MAGIC) {
+	if (curr == NULL) {
 		curr->next = ptr;
-		ptr->next = MAGIC;
+		ptr->next = NULL;
 		return 0;
 	}
   }
@@ -277,7 +272,7 @@ static int slab_free(void * ptr){
 	ptr->next = curr;
 
 	// Set the length of the free block
-	ptr->length = slab_length;
+	ptr->length = g_slabSize;
 
 	// Update the head of the free list
 	slab_head_l = ptr;
@@ -289,7 +284,7 @@ static int slab_free(void * ptr){
 	ptr->next = curr;
 	
 	// Set the slabs length (not really needed)
-	ptr->length = slab_lengthl
+	ptr->length = g_slabSize;
   }
   
   return 0;
