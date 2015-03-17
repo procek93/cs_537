@@ -304,9 +304,7 @@ static int nf_free(void * ptr){
   int ptr_length;			/* Integer variable for holding the
   					   length of the newly freed block */
 
-  // Zero out the magic number
-  ptr = (AllocatedHeader*) ptr;
-  ptr->magic = NULL;
+  char* nextPtr;			/* Arithmetic pointer */
 
   /* Initialize variable pointers to block_headers */
 
@@ -322,8 +320,11 @@ static int nf_free(void * ptr){
   
   if ( ptr < curr ) {
 
+	// Pointer arithmetic swag
+	next_ptr = (char*) ptr + ptr_length + (int)sizeof(FreeHeader);
+
 	// If the freed block can be coalesced with the head of the free list
-	if ( (ptr + ptr_length + (int)sizeof(FreeHeader)) == curr )
+	if ( next_ptr == (char*) curr )
 	{	
 		// Set the next open block
 		ptr->next = next;
@@ -355,8 +356,11 @@ static int nf_free(void * ptr){
 		curr = next;
 	}
 
+	// Pointer arithmetic swag
+	next_ptr = (char*) prev + prev->length + (int)sizeof(FreeHeader);
+
 	// Check for prev block coalescing
-	if ( (prev + prev->length + (int)sizeof(FreeHeader)) == ptr )
+	if ( next_ptr == ptr )
 	{
 		// Set the length of the free block
 		add_length = (ptr_length + (int)sizeof(FreeHeader));
@@ -373,9 +377,12 @@ static int nf_free(void * ptr){
 		// Set the next open block
 		prev->next = ptr;
 	} 
+	
+	// Pointer arithmetic swag
+	next_ptr = (char*) ptr + ptr_length + (int)sizeof(FreeHeader);
 
 	// Check for next block coalescing
-	if ( (ptr + ptr_length + (int)sizeof(FreeHeader)) == curr )
+	if ( next_ptr == curr )
 	{	
 
 		// Set the next open block
