@@ -20,6 +20,12 @@ static int g_slabSize;
 //global to do arithmetic for slab allocator location
 static int alloc_size;
 
+//variable to signal how many slabs to expect
+static int numSlabs;
+
+//variable to specify size of slab+header
+static int slab_chunk;
+
 //flag to signal if we are to use slab allocation
 //states:
 //0 - slab not requested
@@ -88,7 +94,7 @@ void * Mem_Init(int sizeOfRegion, int slabSize)
   /*CREATE ALL MARKERS AND POINTERS TO CRITICAL SECTIONS*/
   //mark begining of each allocation type region
   slab_head = space_ptr;
-  nf_head = space_ptr;
+  nf_head = (space_ptr + (alloc_size/4));
 
   //return begining of the large free block, which will
   //also serve as the begining of the slab block
@@ -106,6 +112,15 @@ void * Mem_Init(int sizeOfRegion, int slabSize)
 
   //mark end of list (final addressable memory slot)
   EOL = space_ptr + (alloc_size - 1);
+
+  //now segment the slab_space
+  generate_slab();
+
+  //set slabChunk
+  slab_chunk = (int)sizeof(FreeHeader) + g_slabSize;
+
+  //set number of slabs
+  numSlabs = (alloc_size/4)/slabChunk;
   
   //return the addr of the entire piece of memory
   return space_ptr;
@@ -120,6 +135,9 @@ void * Mem_Alloc(int size){
 	int padding;
 	int alloc_size;
 	int req_size = size;
+
+	//always reset flag
+	slab_fl = 0;
 	
 	//sanity check request size
 	if(req_size < 0)
@@ -158,7 +176,7 @@ void * Mem_Alloc(int size){
 		}
 	}
 	else
-	if(slab_fl == 2)
+	if(slab_fl == 2)//slab fit failed
 	{
 		if(nf_alloc(req_size) == NULL)
 		{
@@ -169,11 +187,142 @@ void * Mem_Alloc(int size){
 		
 }
 
-static void * slab_alloc(void * head, int * fl){
+/*function segments the slab region into slabs of memory*/
+/*and should only be called by mem_init*/
+static void generate_slab(void){
+	
+	//variable used to keep track of where
+	//in memory we are
+	void * tracker = NULL;
+	//temporary variable used to chain together
+	//a free list
+	FreeHeader * next = NULL;
+	FreeHeader * prev = NULL;
+	//start at begining of list
+	prev = slab_head_l;
+	tracker = slab_head;
+
+	//do one look ahead to make sure we dont
+	//segment a slab in the event we only have 
+	//enough space for one slab to begin with
+	//*keep from making part of NF_alloc a slab
+	tracker += slab_chunk;
+
+	//begin chaining together freespace
+	while(tracker != nf_head)
+	{
+		next = (FreeHeader *)(tracker);
+		//Though we know the slabsize, set it
+		//for integrity checking
+		next->length = g_slabSize;
+		next->next = NULL;
+
+		//link previous to next
+		prev->next = next;
+
+		//next node becomes previous on next iteration
+		prev = next;
+
+		//check if we have space for more slabs
+		tracker += slab_chunk;
+	}
+
+	//reached end of slab region
+	//point it to magic number rather than NULL
+	//to avoid confusion b/t allocated node vs
+	//a node that happens to be last in list
+	prev->next = MAGIC;
+
+	return;	
+
+}
+	
+static void * slab_alloc(int * fl){
+
+	int unexpected_region_fl = 0;
+	int iterations_fl = 0;
+	int numNodes = 0;
+	int aloc_nodes = 0;
+	FreeHeader * temp = NULL;
+	FreeHeader * aloc_location = NULL;
+	void * scroller = slab_head;//start @ head of slab region
+
+	//first check to see if the entire slab region is full
+	//scroll through entire slab region manually to 
+	//see if all nodes taken
+	while(numNodes != numSlabs)
+	{
+		//use flag to signal error
+		iterations_fl++;
+
+		//cast scroller to a freeheader
+		temp = (FreeHeader *)scroller;
+
+		//integrity check that we are looking
+		//at a slab node
+		if((temp->length) == g_slabSize)
+		{
+			numNodes++;
+
+			//check to see if node allocated
+			if((temp->next) == NULL)
+			{
+				aloc_nodes++;
+			}
+
+			//force into next block of memory
+			scroller += slab_chunk;
+		}
+
+		//make sure we're not in unexpected region of memory
+		if(iterations_fl > numSlabs)
+		{
+			break;
+		}
+	}
+
+	//now do the check to see if all blocks allocated
+	if(aloc_nodes == numSlabs)
+	{
+		//signal that we must try next fit instead
+		*fl = 2;
+	}
+	else
+	{
+		//otherwise, a free node must exist
+		//iterate through free list and obtain it
+		
+		//get the free node, and update free list
+		aloc_location = slab_head_l;
+
+		//change the head of the free list
+		//but do a check to see if only one 
+		//slab exists first
+		if((aloc_location->next) == MAGIC)
+		{
+			//if on last node, make it point to null
+			//*this will originally point to MAGIC
+			slab_head_l->next = NULL;
+		}
+		else
+		{	
+			//otherwise there is another free node
+			slab_head_l = (aloc_location->next);
+			//detach the allocated location
+			aloc_location->next = NULL;
+		}
+
+		//succesful slab allocation
+		*fl = 1;
+	}
+
+	return (void*)aloc_location;
 
 }
 
-static void * nf_alloc(void * head, int size){
+}
+
+static void * nf_alloc(int size){
 
 }
 
