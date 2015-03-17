@@ -231,7 +231,7 @@ static void generate_slab(void){
 	//point it to magic number rather than NULL
 	//to avoid confusion b/t allocated node vs
 	//a node that happens to be last in list
-	prev->next = MAGIC;
+	prev->next = NULL;
 
 	return;	
 
@@ -239,86 +239,44 @@ static void generate_slab(void){
 	
 static void * slab_alloc(int * fl){
 
-	int unexpected_region_fl = 0;
-	int iterations_fl = 0;
-	int numNodes = 0;
-	int aloc_nodes = 0;
 	FreeHeader * temp = NULL;
 	FreeHeader * aloc_location = NULL;
-	void * scroller = slab_head;//start @ head of slab region
-
-	//first check to see if the entire slab region is full
-	//scroll through entire slab region manually to 
-	//see if all nodes taken
-	while(numNodes != numSlabs)
-	{
-		//use flag to signal error
-		iterations_fl++;
-
-		//cast scroller to a freeheader
-		temp = (FreeHeader *)scroller;
-
-		//integrity check that we are looking
-		//at a slab node
-		if((temp->length) == g_slabSize)
-		{
-			numNodes++;
-
-			//check to see if node allocated
-			if((temp->next) == NULL)
-			{
-				aloc_nodes++;
-			}
-
-			//force into next block of memory
-			scroller += slab_chunk;
-		}
-
-		//make sure we're not in unexpected region of memory
-		if(iterations_fl > numSlabs)
-		{
-			break;
-		}
-	}
+	void * clear_space = NULL;
 
 	//now do the check to see if all blocks allocated
-	if(aloc_nodes == numSlabs)
+	if(slab_head_l == NULL)
 	{
 		//signal that we must try next fit instead
 		*fl = 2;
 	}
-	else
+	else//a free node exists
 	{
-		//otherwise, a free node must exist
-		//iterate through free list and obtain it
-		
-		//get the free node, and update free list
-		aloc_location = slab_head_l;
+		//the slab_header_l will always point to top of the free list
+		//aka, it will always point to the first free block.
+		//regardless of how free rebuilds the list, the header ptr
+		//will always point to a free block (@top of list)
 
-		//change the head of the free list
-		//but do a check to see if only one 
-		//slab exists first
-		if((aloc_location->next) == MAGIC)
+		if(slab_head_l->next == NULL)
 		{
-			//if on last node, make it point to null
-			//*this will originally point to MAGIC
-			slab_head_l->next = NULL;
+			//the node is the only node that exists
+			aloc_location = slab_head_l;
+			//signal that slabs are exhausted
+			slab_head_l = NULL;
 		}
 		else
-		{	
-			//otherwise there is another free node
-			slab_head_l = (aloc_location->next);
-			//detach the allocated location
-			aloc_location->next = NULL;
-		}
-
+		{
+			//there is more than one free node
+			//pop off the top
+			aloc_location = slab_head_l;
+			slab_head_l = aloc_location->next;
+		}	
+			
 		//succesful slab allocation
 		*fl = 1;
 	}
 
-	return (void*)aloc_location;
-
-}
+	clear_space = ((void*)aloc_location) + (int)sizeof(FreeHeader);
+	return memset(clear_space, 0, g_slabSize);
 
 }
 
