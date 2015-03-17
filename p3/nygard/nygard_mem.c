@@ -225,13 +225,10 @@ static int slab_free(void * ptr){
   /* Local variables */
   FreeHeader* curr = NULL;	/* Variable pointers to block_headers */
   FreeHeader* prev = NULL;
+  FreeHeader* next = NULL;
 
   int slab_length;			/* Integer variable for determing 
   					   size of block to be coalesced */  
-
-  // Zero out the magic number 
-  ptr = (AllocatedHeader*) ptr;
-  ptr->magic = NULL;
 
   /* Initialize variable pointers to block_headers */
 
@@ -242,11 +239,27 @@ static int slab_free(void * ptr){
   ptr = (FreeHeader*) ptr;
 
   /* Slab insertion into the free list below */
-  
+ 
+  // If the free list is empty, make the specified pointer the
+  // head of the free list and return
+  if (curr == NULL) {
+	slab_head_l = ptr;
+	ptr->next = MAGIC;
+	return 0;
+  }
+
   // Traverse the free list to determine where the newly freed slab belongs
   while ( curr < ptr )
   {
   	prev = curr;
+	curr = next;
+	
+	// If the freed slab is at the end of the list, append it
+	if (curr == MAGIC) {
+		curr->next = ptr;
+		ptr->next = MAGIC;
+		return 0;
+	}
   }
   
   if ( ptr < slab_head_l ) {
