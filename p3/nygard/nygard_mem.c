@@ -188,9 +188,6 @@ static void * nf_alloc(void * head, int size){
 /* - Coalesce if one or both of the immediate neighbours are free */
 int Mem_Free(void *ptr)
 {
-  // Cast the pointer
-  ptr = (AllocatedHeader*) ptr;
-
   if ( ptr == NULL ) return 0;		/* Check if ptr parameter is NULL,
   					 * and simply return */
 
@@ -202,18 +199,30 @@ int Mem_Free(void *ptr)
 	return -1;
   }
 
-  // Trying to free an unallocated block is an error
-  if ( ptr->magic != MAGIC )
-  {
-	return -1;
-  }
 
   if ( ptr >= nf_head )
   {
-	return nf_free(ptr);
+        // Check if the specified block is allocated
+        if ( (AllocatedHeader*) ptr->magic == MAGIC )
+        {
+		return nf_free(ptr);
+	
+	// Trying to free an unallocated block results in error
+        } else {
+		return -1;
+	}
 
   } else {
-	return slab_free(ptr);
+
+	// Check if the specified block is a valid slab	
+  	if ( (FreeHeader*) ptr->length == g_slabeSize)
+	{
+		return slab_free(ptr);
+
+	// Trying to free an invalid slab results in error
+	} else {
+		return -1;
+	}
   }
 
 ///////////////////////// START OF THE CS354 STUFF //////////////////////////////
