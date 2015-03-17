@@ -108,7 +108,7 @@ void * Mem_Init(int sizeOfRegion, int slabSize)
 
   //first 25% of memory dedicated to slab
   //so list for next_fit allocation comes next
-  nf_head_l = ((char *)space_ptr + (alloc_size/4));
+  nf_head_l = (FreeHeader *)((char *)space_ptr + (alloc_size/4));
   //CREATE A CIRCULAR QUEUE
   nf_head_l->next = nf_head_l;
   nf_head_l->length = ((3*alloc_size)/4) - (int)sizeof(FreeHeader);
@@ -286,11 +286,24 @@ static void * slab_alloc(int * fl){
 static void * nf_alloc(int size){
 
 	int request_size = size;
-	void * split_loc = NULL;
-	void * h_begin = NULL;
-	void * begin = NULL;
-	static FreeHeader * last_location = NULL;
+	int first_loop = 0;
+
+	/*following temp headers are char * to do byte arithemetic*/
+	char * split_loc = NULL;
+	char * h_begin = NULL;
+	char * mem_begin = NULL;
+
+	/*last_location static to keep location between instantiations*/
+	static FreeHeader * last_location;
+
+	/*rover pointer that will search for a free block*/
+	/*and pointer to free block that always preceeds it*/
+	FreeHeader * previous = NULL;
 	FreeHeader * self_catch = NULL;
+
+	FreeHeader * split = NULL;
+
+	/*variables for space calculations & predictions*/
 	int leftover = 0;
 	int space = 0;
 
@@ -303,6 +316,8 @@ static void * nf_alloc(int size){
 		last_location = nf_head_l;
 		nf_once++;
 	}
+		
+	self_catch = NULL;
 
 	//idea is to loop until you end up back where you started
 	//self_catch will be NULL, then after entering the loop
@@ -313,18 +328,52 @@ static void * nf_alloc(int size){
 	/*allocate if possible*/
 	while((last_location != self_catch) && (last_location != NULL))
 	{
+		if(first_loop == 0)
+		{
+			//set rover pointer to where last free location was
+			self_catch = last_location;
+			//you only want self_catch to obtain last_location once per instantiation
+			first_loop++;
+		}
+
 		//premptively calculate possible memory that'd be left if we allocate here
-		leftover = (last_location->length) - request_size;
+		leftover = (self_catch->length) - request_size;
 		//memory left after we'd allocate the header + request (aka the possible next split free block)
 		space = leftover - (int)sizeof(FreeHeader);
 		
 		//we will hit only free blocks on iterations, point is to find
 		//the adequate size
-		if((last_location->length) >= request_size)//enough memory to meet just the request?
+		if((self_catch->length) >= request_size)//enough memory to meet just the request?
 		{
 			if(leftover > (int)sizeof(FreeHeader))//is freespace-request enough to fit header too?
 			{
-				if(
+				if(space >= 4)//is remaining space enough for at least smallest request (4 bytes)
+				{
+					//parameters for memory split sufficient
+
+					//begin pointer arithmetic with starting location
+					h_begin = (char *)last_location; //cast to char to byte arithmetic
+					//move into where the free mem is (past the header)
+					mem_begin = h_begin + (int)sizeof(FreeHeader); 
+					//give this current header exactly the request size in bytes
+					//we will now point to where a new header will go (to split & link)
+					split_loc = mem_begin + request_size;
+					//create the new header
+					split = (FreeHeader*)split_spot;
+					...
+				}
+			}
+		}
+		//block isn't big enough for our request
+		else
+		{
+			//capture previous free node
+			previous = self_catch;
+			//move self_catch onto the next node
+			self_catch = previous->next;
+			
+		}
+	}
 			
 
 		
