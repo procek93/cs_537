@@ -202,6 +202,9 @@ int Mem_Free(void *ptr)
   // The pointer refers to a block within the next fit region
   if ( ptr >= nf_head )
   {
+
+	//ptr = (AllocatedHeader*) ptr;
+  	
         // Check if the specified block is allocated
         if ( (AllocatedHeader*) ptr->magic == MAGIC )
         {
@@ -214,6 +217,8 @@ int Mem_Free(void *ptr)
  
   // The pointer refers to a block within the slab region
   } else {
+
+	//ptr = (FreeHeader*) ptr;
 
 	// Check if the specified block is a valid slab	
   	if ( (FreeHeader*) ptr->length == g_slabeSize)
@@ -298,6 +303,12 @@ static int nf_free(void * ptr){
   FreeHeader* next = NULL;
   FreeHeader* prev = NULL;
 
+  FreeHeader* list_end = NULL;
+  FreeHeader* list_end_next = NULL;
+
+  int one_block;			/* Variable used for circular buffer
+  					   cycle detection with one free block */
+
   int add_length;			/* Integer variable for determing 
   					   size of block to be coalesced */
   
@@ -307,6 +318,8 @@ static int nf_free(void * ptr){
   char* nextPtr;			/* Arithmetic pointer */
 
   /* Initialize variable pointers to block_headers */
+ 
+  one_block = 0;
 
   curr = nf_head_l;
 
@@ -316,10 +329,21 @@ static int nf_free(void * ptr){
 
   ptr = (FreeHeader*) ptr;
 
-  /* Coalescing code below */
+  // Traverse the free list to get the 'end' of the circular queue.
+  // That is, find the block that precededs the head of the free list
+  // so that its next field may be updated to the new free list head
+  list_end = nf_head_l;
+  list_end_next = list_end->next;
+	
+  while ( list_end_next != nf_head_l )
+  {
+	list_end = list_end_next;
+	list_end_next = list_end->next;
+  }
   
+  /* Coalescing code below */ 
   if ( ptr < curr ) {
-
+	
 	// Pointer arithmetic swag
 	next_ptr = (char*) ptr + ptr_length + (int)sizeof(FreeHeader);
 
@@ -332,6 +356,9 @@ static int nf_free(void * ptr){
 		// Set the length of the free block
 		add_length = (curr->length + (int)sizeof(FreeHeader));
 		ptr->length = add_length + ptr_length;
+
+		// Update loopback of circular queue
+		list_end->next = ptr;
 		
 	} else {
 		
@@ -340,6 +367,9 @@ static int nf_free(void * ptr){
 
 		// Set the length of the free block
 		ptr->length = ptr_length;
+
+		// Update loopback of circular queue
+		list_end->next = ptr;
 	}
 
 	// Update the head of the free list
@@ -354,51 +384,88 @@ static int nf_free(void * ptr){
 	{
 	  	prev = curr;
 		curr = next;
+
+		// If there is only one open block in the free list
+		// that points back to itself, break to avoid an
+		// infinite loop and set the cycle check variable
+		if (prev == curr)
+		{
+			one_block = 1;
+			break;
+		}
 	}
 
-	// Pointer arithmetic swag
-	next_ptr = (char*) prev + prev->length + (int)sizeof(FreeHeader);
-
-	// Check for prev block coalescing
-	if ( next_ptr == ptr )
-	{
-		// Set the length of the free block
-		add_length = (ptr_length + (int)sizeof(FreeHeader));
-		prev->length += add_length;
-		ptr_length = ptr->length;
-
-		// Update the pointer for further coalescing
-		ptr = prev;
-
-		// No need to update the next pointer
-		
-	} else {
-		
-		// Set the next open block
-		prev->next = ptr;
-	} 
-	
-	// Pointer arithmetic swag
-	next_ptr = (char*) ptr + ptr_length + (int)sizeof(FreeHeader);
-
-	// Check for next block coalescing
-	if ( next_ptr == curr )
+	// If there is one free block left in the free list that
+	// is found at a smaller address than the specified pointer
+	if ( one_block == 1 )
 	{	
+		// Pointer arithmetic swag
+		next_ptr = (char*) prev + prev->length + (int)sizeof(FreeHeader);
 
-		// Set the next open block
-		ptr->next = next;
+		// Check for prev block coalescing
+		if ( next_ptr == ptr )
+		{
+			// Set the length of the free block
+			add_length = (ptr_length + (int)sizeof(FreeHeader));
+			prev->length += add_length;
 
-		// Set the length of the free block
-		add_length = (curr->length + (int)sizeof(FreeHeader));
-		ptr->length += add_length;
-	
+			// No need to update the next pointer
+			
+		} else {
+			
+			// Update loopback of circular queue
+			ptr->next = prev;
+
+			// Set the next open block
+			prev->next = ptr;
+		} 
+
+	// There are multiple free blocks within the free list
 	} else {
-		
-		// Set the next open block
-		ptr->next = curr;
 
-		// Set the free block's length
-		ptr->length = ptr_length;
+		// Pointer arithmetic swag
+		next_ptr = (char*) prev + prev->length + (int)sizeof(FreeHeader);
+
+		// Check for prev block coalescing
+		if ( next_ptr == ptr )
+		{
+			// Set the length of the free block
+			add_length = (ptr_length + (int)sizeof(FreeHeader));
+			prev->length += add_length;
+			ptr_length = ptr->length;
+
+			// Update the pointer for further coalescing
+			ptr = prev;
+
+			// No need to update the next pointer
+			
+		} else {
+			
+			// Set the next open block
+			prev->next = ptr;
+		} 
+		
+		// Pointer arithmetic swag
+		next_ptr = (char*) ptr + ptr_length + (int)sizeof(FreeHeader);
+
+		// Check for next block coalescing
+		if ( next_ptr == curr )
+		{	
+			// Set the next open block
+			ptr->next = next;
+
+			// Set the length of the free block
+			add_length = (curr->length + (int)sizeof(FreeHeader));
+			ptr->length += add_length;
+		
+		} else {
+			
+			// Set the next open block
+			ptr->next = curr;
+
+			// Set the free block's length
+			ptr->length = ptr_length;
+		}
 	}
   }  
 
