@@ -396,57 +396,104 @@ void Mem_Dump()
 {
   int counter;
 
-  FreeHeader* current = NULL;
-  AllocatedHeader CURRENT = NULL:
+  FreeHeader* slab_current = slab_head_l;
+  FreeHeader* nf_current = nf_head_l;
 
   char* t_Begin = NULL;
   char* Begin = NULL;
-  int Size;
+  //int Size;
   int t_Size;
   char* End = NULL;
-  int free_size;
-  int busy_size;
-  int total_size;
+  
+  int slab_free;
+  int nf_free;
+   
+  int slab_size;
+
+  //int slab_busy;
+  //int nf_busy;
+
+  //int slab_total;
+  //int nf_total;
+
   char status[5];
 
-  free_size = 0;
-  busy_size = 0;
-  total_size = 0;
-  current = list_head;
+  slab_free = 0;
+  nf_free = 0;
+
+  // All slabs are the same size, so this will be the appropriate size
+  slab_size = slab_head_l->length;
+
+  //slab_busy = 0;
+  //nf_busy= 0;
+ 
   counter = 1;
   fprintf(stdout,"************************************Block list***********************************\n");
   fprintf(stdout,"No.\tStatus\tBegin\t\tEnd\t\tSize\tt_Size\tt_Begin\n");
   fprintf(stdout,"---------------------------------------------------------------------------------\n");
-  while(NULL != current)
+  
+  // Count the number of free slabs
+  while(NULL != slab_current)
   {
-    t_Begin = (char*)current;
-    Begin = t_Begin + (int)sizeof(block_header);
-    Size = current->size_status;
+    t_Begin = (char*)slab_current;
+    Begin = t_Begin + (int)sizeof(FreeHeader);
+    Size = slab_current->length;
     strcpy(status,"Free");
-    if(Size & 1) /*LSB = 1 => busy block*/
+/*
+    if(current->magic == MAGIC)
     {
       strcpy(status,"Busy");
-      Size = Size - 1; /*Minus one for ignoring status in busy block*/
-      t_Size = Size + (int)sizeof(block_header);
-      busy_size = busy_size + t_Size;
+      t_Size = current->length + (int)sizeof(FreeHeader);
+      slab_busy += t_Size;
     }
     else
     {
       t_Size = Size + (int)sizeof(block_header);
       free_size = free_size + t_Size;
     }
+*/
     End = Begin + Size;
     fprintf(stdout,"%d\t%s\t0x%08lx\t0x%08lx\t%d\t%d\t0x%08lx\n",counter,status,(unsigned long int)Begin,(unsigned long int)End,Size,t_Size,(unsigned long int)t_Begin);
-    total_size = total_size + t_Size;
-    current = current->next;
+    slab_free += Size;
+    slab_current = slab_current->next;
     counter = counter + 1;
   }
+
+  // Count the number of free blocks in Next Fit
+  while(NULL != nf_current)
+  {
+    t_Begin = (char*)nf_current;
+    Begin = t_Begin + (int)sizeof(FreeHeader);
+    Size = nf_current->length;
+    strcpy(status,"Free");
+/*
+    if(current->magic == MAGIC)
+    {
+      strcpy(status,"Busy");
+      t_Size = current->length + (int)sizeof(FreeHeader);
+      slab_busy += t_Size;
+    }
+    else
+    {
+      t_Size = Size + (int)sizeof(block_header);
+      free_size = free_size + t_Size;
+    }
+*/
+    End = Begin + Size;
+    fprintf(stdout,"%d\t%s\t0x%08lx\t0x%08lx\t%d\t%d\t0x%08lx\n",counter,status,(unsigned long int)Begin,(unsigned long int)End,Size,t_Size,(unsigned long int)t_Begin);
+    nf_free += Size;
+    nf_current = nf_current->next;
+    counter = counter + 1;
+  }
+
   fprintf(stdout,"---------------------------------------------------------------------------------\n");
   fprintf(stdout,"*********************************************************************************\n");
 
-  fprintf(stdout,"Total busy size = %d\n",busy_size);
-  fprintf(stdout,"Total free size = %d\n",free_size);
-  fprintf(stdout,"Total size = %d\n",busy_size+free_size);
+  //fprintf(stdout,"Total slab busy size = %d\n",busy_slab);
+  //fprintf(stdout,"Total next fit busy size = %d\n",busy_nf);
+  fprintf(stdout,"Total slab free size = %d\n",slab_free);
+  fprintf(stdout,"Total next fit free size = %d\n",nf_free);
+  //fprintf(stdout,"Total size = %d\n",busy_slab+busy_nf+free_slab+free_nf);
   fprintf(stdout,"*********************************************************************************\n");
   fflush(stdout);
   return;
