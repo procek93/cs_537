@@ -3,8 +3,10 @@
 
 void * Mem_Init(int sizeOfRegion, int slabSize);
 void * Mem_Alloc(int size);
-static void * slab_free(void * ptr);
-static void * nf_free(void * ptr);
+static void * slab_alloc(int * fl);
+static void * nf_alloc(int size);
+static int slab_free(void * ptr);
+static int nf_free(void * ptr);
 int Mem_Free(void *ptr);
 void Mem_Dump();
 
