@@ -13,7 +13,6 @@
 #include <sys/mman.h>
 #include <string.h>
 
-/**********************************************************************************************PROCTORBROWN*/
 //create variable holder for slabSize request
 static int g_slabSize;
 
@@ -48,7 +47,6 @@ struct FreeHeader * nf_head_l = NULL;
 
 //last accessible address possible (SEG_FAULT_CHECK)
 void * EOL = NULL;
-/***********************************************************************************************************/
 
 /* Function used to Initialize the memory allocator */
 /* Not intended to be called more than once by a program */
@@ -99,7 +97,7 @@ void * Mem_Init(int sizeOfRegion, int slabSize)
   /*CREATE ALL MARKERS AND POINTERS TO CRITICAL SECTIONS*/
   //mark begining of each allocation type region
   slab_head = space_ptr;
-  nf_head = ((char *)space_ptr + (alloc_size/4));
+  nf_head = (char *)space_ptr + (alloc_size/4);
 
   //return begining of the large free block, which will
   //also serve as the begining of the slab block
@@ -126,7 +124,7 @@ void * Mem_Init(int sizeOfRegion, int slabSize)
   slab_chunk = (int)sizeof(struct FreeHeader) + g_slabSize;
 
   //set number of slabs
-  numSlabs = (alloc_size/4)/slab_chunk;
+  numSlabs = (alloc_size/4)/slabChunk;
   
   //return the addr of the entire piece of memory
   return space_ptr;
@@ -190,8 +188,6 @@ void * Mem_Alloc(int size){
 			return NULL;
 		}
 	}
-
-	return NULL;
 		
 }
 
@@ -247,6 +243,7 @@ static void generate_slab(void){
 	
 static void * slab_alloc(int * fl){
 
+	struct FreeHeader * temp = NULL;
 	struct FreeHeader * aloc_location = NULL;
 	void * clear_space = NULL;
 
@@ -330,7 +327,7 @@ static void * nf_alloc(int size){
 	if(freed_after_empty == 1)
 	{
 		last_location = nf_head_l;
-		freed_after_empty = 0;
+		freed_after_empty == 0;
 	}
 		
 	self_catch = NULL;
@@ -377,7 +374,7 @@ static void * nf_alloc(int size){
 					//we will now point to where a new header will go (to split & link)
 					split_loc = mem_begin + request_size;
 					//create the new header
-					split = (struct FreeHeader*)split_loc;
+					split = (struct FreeHeader*)split_spot;
 					//denote the space left
 					split->length = space;
 					self_catch->length = request_size;
@@ -614,24 +611,300 @@ static void * nf_alloc(int size){
 	//or mem available to begin with
 	return NULL;
 }
+
+/* Function for freeing up a previously allocated block */
+/* Argument - ptr: Address of the block to be freed up */
+/* Returns 0 on success */
+/* Returns -1 on failure */
+/* Here is what this function should accomplish */
+/* - No-op if ptr is NULL */
+/* - Return -1 if ptr is not pointing to the first byte of a busy block */
+/* - Mark the block as free */
+/* - Coalesce if one or both of the immediate neighbours are free */
+int Mem_Free(void *ptr)
+{
+  if ( ptr == NULL ) return 0;		/* Check if ptr parameter is NULL,
+  					 * and simply return */
+
+  // It is an error (segmentation fault) to attempt a free outside 
+  // of the originally allocated Mem_Init region
+  if ( (ptr < slab_head) || (ptr > EOL) ) 
+  {
+	printf(stdout, "SEGFAULT\n");
+	return -1;
+  }
+
+  // The pointer refers to a block within the next fit region
+  if ( ptr >= nf_head )
+  {
+
+	//ptr = (struct AllocatedHeader*) ptr;
+  	
+        // Check if the specified block is allocated
+        if ( (struct AllocatedHeader*) ptr->magic == MAGIC )
+        {
+		return nf_free((struct AllocatedHeader*)ptr);
+	
+	// Trying to free an unallocated block results in error
+        } else {
+		return -1;
+	}
+ 
+  // The pointer refers to a block within the slab region
+  } else {
+
+	//ptr = (struct FreeHeader*) ptr;
+
+	// Check if the specified block is a valid slab	
+  	if ( (struct FreeHeader*) ptr->length == g_slabeSize)
+	{
+		return slab_free((struct FreeHeader*)ptr);
+
+	// Trying to free an invalid slab results in error
+	} else {
+		return -1;
+	}
+  }
+
+///////////////////////// START OF THE CS354 STUFF //////////////////////////////
+
+}
+
+static int slab_free(void * ptr){
+
+  /* Local variables */
+  struct FreeHeader* curr = NULL;	/* Variable pointers to block_headers */
+  struct FreeHeader* prev = NULL;
+  struct FreeHeader* next = NULL;
+
+  /* Initialize variable pointers to block_headers */
+
+  curr = slab_head_l;
+
+  ptr = (struct FreeHeader*) ptr;
+
+  /* Slab insertion into the free list below */
+ 
+  // If the free list is empty, make the specified pointer the
+  // head of the free list and return
+  if (curr == NULL) {
+	slab_head_l = ptr;
+	return 0;
+  }
+
+  // Traverse the free list to determine where the newly freed slab belongs
+  while ( curr < ptr )
+  {
+  	prev = curr;
+	curr = next;
+	
+	// If the freed slab is at the end of the list, append it
+	if (curr == NULL) {
+		curr->next = ptr;
+		ptr->next = NULL;
+		return 0;
+	}
+  }
+  
+  if ( ptr < slab_head_l ) {
+		
+	// Set the next open block
+	ptr->next = curr;
+
+	// Set the length of the free block
+	ptr->length = g_slabSize;
+
+	// Update the head of the free list
+	slab_head_l = ptr;
+
+  } else {
+
+	// Link the slab into the free list
+	prev->next = ptr;
+	ptr->next = curr;
+	
+	// Set the slabs length (not really needed)
+	ptr->length = g_slabSize;
+  }
+  
+  return 0;
+
+} // End of slab_free
+
+static int nf_free(void * ptr){
+
+  /* Local variables */
+  struct FreeHeader* curr = NULL;	/* Variable pointers to block_headers */
+  struct FreeHeader* next = NULL;
+  struct FreeHeader* prev = NULL;
+
+  struct FreeHeader* list_end = NULL;
+  struct FreeHeader* list_end_next = NULL;
+
+  int one_block;			/* Variable used for circular buffer
+  					   cycle detection with one free block */
+
+  int add_length;			/* Integer variable for determing 
+  					   size of block to be coalesced */
+  
+  int ptr_length;			/* Integer variable for holding the
+  					   length of the newly freed block */
+
+  char* nextPtr;			/* Arithmetic pointer */
+
+  /* Initialize variable pointers to block_headers */
+ 
+  one_block = 0;
+
+  curr = nf_head_l;
+
+  next = curr->next;
+
+  ptr_length = ptr->length;
+
+  ptr = (struct FreeHeader*) ptr;
+
+  // Traverse the free list to get the 'end' of the circular queue.
+  // That is, find the block that precededs the head of the free list
+  // so that its next field may be updated to the new free list head
+  list_end = nf_head_l;
+  list_end_next = list_end->next;
+	
+  while ( list_end_next != nf_head_l )
+  {
+	list_end = list_end_next;
+	list_end_next = list_end->next;
+  }
+  
+  /* Coalescing code below */ 
+  if ( ptr < curr ) {
+	
+	// Pointer arithmetic swag
+	next_ptr = (char*) ptr + ptr_length + (int)sizeof(struct  FreeHeader);
+
+	// If the freed block can be coalesced with the head of the free list
+	if ( next_ptr == (char*) curr )
+	{	
+		// Set the next open block
+		ptr->next = next;
+
+		// Set the length of the free block
+		add_length = (curr->length + (int)sizeof(struct  FreeHeader));
+		ptr->length = add_length + ptr_length;
+
+		// Update loopback of circular queue
+		list_end->next = ptr;
+		
+	} else {
+		
+		// Set the next open block
+		ptr->next = curr;
+
+		// Set the length of the free block
+		ptr->length = ptr_length;
+
+		// Update loopback of circular queue
+		list_end->next = ptr;
+	}
+
+	// Update the head of the free list
+	nf_head_l = ptr;
+
+  } else {
+
+	// Traverse the free list to determine where the newly freed
+	// block will be placed. Coalescing will occur if the specified
+	// block neighbors another free block
+	while ( curr < ptr )
+	{
+	  	prev = curr;
+		curr = next;
+
+		// If there is only one open block in the free list
+		// that points back to itself, break to avoid an
+		// infinite loop and set the cycle check variable
+		if (prev == curr)
+		{
+			one_block = 1;
+			break;
+		}
+	}
+
+	// If there is one free block left in the free list that
+	// is found at a smaller address than the specified pointer
+	if ( one_block == 1 )
+	{	
+		// Pointer arithmetic swag
+		next_ptr = (char*) prev + prev->length + (int)sizeof(struct FreeHeader);
+
+		// Check for prev block coalescing
+		if ( next_ptr == ptr )
+		{
+			// Set the length of the free block
+			add_length = (ptr_length + (int)sizeof(struct FreeHeader));
+			prev->length += add_length;
+
+			// No need to update the next pointer
 			
+		} else {
+			
+			// Update loopback of circular queue
+			ptr->next = prev;
 
+			// Set the next open block
+			prev->next = ptr;
+		} 
+
+	// There are multiple free blocks within the free list
+	} else {
+
+		// Pointer arithmetic swag
+		next_ptr = (char*) prev + prev->length + (int)sizeof(struct FreeHeader);
+
+		// Check for prev block coalescing
+		if ( next_ptr == ptr )
+		{
+			// Set the length of the free block
+			add_length = (ptr_length + (int)sizeof(struct FreeHeader));
+			prev->length += add_length;
+			ptr_length = ptr->length;
+
+			// Update the pointer for further coalescing
+			ptr = prev;
+
+			// No need to update the next pointer
+			
+		} else {
+			
+			// Set the next open block
+			prev->next = ptr;
+		} 
 		
+		// Pointer arithmetic swag
+		next_ptr = (char*) ptr + ptr_length + (int)sizeof(struct FreeHeader);
+
+		// Check for next block coalescing
+		if ( next_ptr == curr )
+		{	
+			// Set the next open block
+			ptr->next = next;
+
+			// Set the length of the free block
+			add_length = (curr->length + (int)sizeof(struct FreeHeader));
+			ptr->length += add_length;
 		
+		} else {
+			
+			// Set the next open block
+			ptr->next = curr;
 
-	
+			// Set the free block's length
+			ptr->length = ptr_length;
+		}
+	}
+  }  
 
-	
-	
-	
-	
-	
-	
+  // Return success
+  return 0;
 
-	
-
-	
-
-
-
-
+} // End of nf_free

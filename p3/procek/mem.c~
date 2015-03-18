@@ -13,6 +13,7 @@
 #include <sys/mman.h>
 #include <string.h>
 
+/**********************************************************************************************PROCTORBROWN*/
 //create variable holder for slabSize request
 static int g_slabSize;
 
@@ -42,11 +43,12 @@ void * slab_head = NULL;
 void * nf_head = NULL;
 
 //Headers for freelist for each region
-FreeHeader * slab_head_l = NULL;
-FreeHeader * nf_head_l = NULL;
+struct FreeHeader * slab_head_l = NULL;
+struct FreeHeader * nf_head_l = NULL;
 
 //last accessible address possible (SEG_FAULT_CHECK)
 void * EOL = NULL;
+/***********************************************************************************************************/
 
 /* Function used to Initialize the memory allocator */
 /* Not intended to be called more than once by a program */
@@ -97,22 +99,22 @@ void * Mem_Init(int sizeOfRegion, int slabSize)
   /*CREATE ALL MARKERS AND POINTERS TO CRITICAL SECTIONS*/
   //mark begining of each allocation type region
   slab_head = space_ptr;
-  nf_head = (char *)space_ptr + (alloc_size/4));
+  nf_head = ((char *)space_ptr + (alloc_size/4));
 
   //return begining of the large free block, which will
   //also serve as the begining of the slab block
-  slab_head_l = (FreeHeader *)space_ptr;
+  slab_head_l = (struct FreeHeader *)space_ptr;
   //only block in free list
   slab_head_l->next = NULL;
   //*SIZE STORED IN BLOCK EXCLUDES HEADER SPACE
-  slab_head_l->length = (alloc_size/4) - (int)sizeof(FreeHeader);
+  slab_head_l->length = (alloc_size/4) - (int)sizeof(struct FreeHeader);
 
   //first 25% of memory dedicated to slab
   //so list for next_fit allocation comes next
-  nf_head_l = (FreeHeader *)((char *)space_ptr + (alloc_size/4));
+  nf_head_l = (struct FreeHeader *)((char *)space_ptr + (alloc_size/4));
   //CREATE A CIRCULAR QUEUE
   nf_head_l->next = nf_head_l;
-  nf_head_l->length = ((3*alloc_size)/4) - (int)sizeof(FreeHeader);
+  nf_head_l->length = ((3*alloc_size)/4) - (int)sizeof(struct FreeHeader);
 
   //mark end of list (final addressable memory slot)
   EOL = (char *)space_ptr + (alloc_size - 1);
@@ -121,10 +123,10 @@ void * Mem_Init(int sizeOfRegion, int slabSize)
   generate_slab();
 
   //set slabChunk
-  slab_chunk = (int)sizeof(FreeHeader) + g_slabSize;
+  slab_chunk = (int)sizeof(struct FreeHeader) + g_slabSize;
 
   //set number of slabs
-  numSlabs = (alloc_size/4)/slabChunk;
+  numSlabs = (alloc_size/4)/slab_chunk;
   
   //return the addr of the entire piece of memory
   return space_ptr;
@@ -188,6 +190,8 @@ void * Mem_Alloc(int size){
 			return NULL;
 		}
 	}
+
+	return NULL;
 		
 }
 
@@ -200,8 +204,8 @@ static void generate_slab(void){
 	void * tracker = NULL;
 	//temporary variable used to chain together
 	//a free list
-	FreeHeader * next = NULL;
-	FreeHeader * prev = NULL;
+	struct FreeHeader * next = NULL;
+	struct FreeHeader * prev = NULL;
 	//start at begining of list
 	prev = slab_head_l;
 	tracker = slab_head;
@@ -215,7 +219,7 @@ static void generate_slab(void){
 	//begin chaining together freespace
 	while(tracker != nf_head)
 	{
-		next = (FreeHeader *)(tracker);
+		next = (struct FreeHeader *)(tracker);
 		//Though we know the slabsize, set it
 		//for integrity checking
 		next->length = g_slabSize;
@@ -243,8 +247,7 @@ static void generate_slab(void){
 	
 static void * slab_alloc(int * fl){
 
-	FreeHeader * temp = NULL;
-	FreeHeader * aloc_location = NULL;
+	struct FreeHeader * aloc_location = NULL;
 	void * clear_space = NULL;
 
 	//now do the check to see if all blocks allocated
@@ -279,7 +282,7 @@ static void * slab_alloc(int * fl){
 		*fl = 1;
 	}
 
-	clear_space = (void*)((char *)aloc_location + (int)sizeof(FreeHeader));
+	clear_space = (void*)((char *)aloc_location + (int)sizeof(struct FreeHeader));
 	return memset(clear_space, 0, g_slabSize);
 
 }
@@ -297,18 +300,18 @@ static void * nf_alloc(int size){
 	char * mem_begin = NULL;
 
 	/*last_location static to keep location between instantiations*/
-	static FreeHeader * last_location;
+	static struct FreeHeader * last_location;
 
 	/*rover pointer that will search for a free block*/
 	/*and pointer to free block that always preceeds it*/
-	FreeHeader * previous = NULL;
-	FreeHeader * self_catch = NULL;
+	struct FreeHeader * previous = NULL;
+	struct FreeHeader * self_catch = NULL;
 
-	FreeHeader * split = NULL;
-	FreeHeader * head_looper = NULL;
+	struct FreeHeader * split = NULL;
+	struct FreeHeader * head_looper = NULL;
 
 	//header used to return the address
-	AllocatedHeader * ret = NULL;
+	struct AllocatedHeader * ret = NULL;
 
 	/*variables for space calculations & predictions*/
 	int leftover = 0;
@@ -327,7 +330,7 @@ static void * nf_alloc(int size){
 	if(freed_after_empty == 1)
 	{
 		last_location = nf_head_l;
-		freed_after_empty == 0;
+		freed_after_empty = 0;
 	}
 		
 	self_catch = NULL;
@@ -354,13 +357,13 @@ static void * nf_alloc(int size){
 		//premptively calculate possible memory that'd be left if we allocate here
 		leftover = (self_catch->length) - request_size;
 		//memory left after we'd allocate the header + request (aka the possible next split free block)
-		space = leftover - (int)sizeof(FreeHeader);
+		space = leftover - (int)sizeof(struct FreeHeader);
 		
 		//we will hit only free blocks on iterations, point is to find
 		//the adequate size
 		if((self_catch->length) >= request_size)//enough memory to meet just the request?
 		{
-			if(leftover > (int)sizeof(FreeHeader))//is freespace-request enough to fit header too?
+			if(leftover > (int)sizeof(struct FreeHeader))//is freespace-request enough to fit header too?
 			{
 				if(space >= 4)//is remaining space enough for at least smallest request (4 bytes)
 				{
@@ -369,12 +372,12 @@ static void * nf_alloc(int size){
 					//begin pointer arithmetic with starting location
 					h_begin = (char *)self_catch; //cast to char to byte arithmetic
 					//move into where the free mem is (past the header)
-					mem_begin = h_begin + (int)sizeof(FreeHeader); 
+					mem_begin = h_begin + (int)sizeof(struct FreeHeader); 
 					//give this current header exactly the request size in bytes
 					//we will now point to where a new header will go (to split & link)
 					split_loc = mem_begin + request_size;
 					//create the new header
-					split = (FreeHeader*)split_spot;
+					split = (struct FreeHeader*)split_loc;
 					//denote the space left
 					split->length = space;
 					self_catch->length = request_size;
@@ -440,7 +443,7 @@ static void * nf_alloc(int size){
 
 					//pop allocated out of the chain 
 					size_allocated = self_catch->length;
-					ret = (AllocatedHeader *)self_catch;
+					ret = (struct AllocatedHeader *)self_catch;
 					ret->length = size_allocated;
 			
 					return ret;
@@ -460,7 +463,7 @@ static void * nf_alloc(int size){
 					{
 						//pop allocated out of the chain 
 						size_allocated = self_catch->length;
-						ret = (AllocatedHeader *)self_catch;
+						ret = (struct AllocatedHeader *)self_catch;
 						ret->length = size_allocated;
 
 						//list now empty
@@ -500,7 +503,7 @@ static void * nf_alloc(int size){
 
 						//pop allocated out of the chain 
 						size_allocated = self_catch->length;
-						ret = (AllocatedHeader *)self_catch;
+						ret = (struct AllocatedHeader *)self_catch;
 						ret->length = size_allocated;
 
 						return ret;
@@ -516,7 +519,7 @@ static void * nf_alloc(int size){
 
 					//pop allocated out of the chain 
 					size_allocated = self_catch->length;
-					ret = (AllocatedHeader *)self_catch;
+					ret = (struct AllocatedHeader *)self_catch;
 					ret->length = size_allocated;
 			
 					return ret;
@@ -535,7 +538,7 @@ static void * nf_alloc(int size){
 				{
 					//pop allocated out of the chain 
 					size_allocated = self_catch->length;
-					ret = (AllocatedHeader *)self_catch;
+					ret = (struct AllocatedHeader *)self_catch;
 					ret->length = size_allocated;
 
 					//list now empty
@@ -575,7 +578,7 @@ static void * nf_alloc(int size){
 
 					//pop allocated out of the chain 
 					size_allocated = self_catch->length;
-					ret = (AllocatedHeader *)self_catch;
+					ret = (struct AllocatedHeader *)self_catch;
 					ret->length = size_allocated;
 
 					return ret;
@@ -591,7 +594,7 @@ static void * nf_alloc(int size){
 
 				//pop allocated out of the chain 
 				size_allocated = self_catch->length;
-				ret = (AllocatedHeader *)self_catch;
+				ret = (struct AllocatedHeader *)self_catch;
 				ret->length = size_allocated;
 			
 				return ret;
@@ -629,7 +632,6 @@ static void * nf_alloc(int size){
 
 	
 
-}
 
 
 
