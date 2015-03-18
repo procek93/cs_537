@@ -146,7 +146,7 @@ void* Mem_Alloc(int size)
        {
          if(leftover > (int)sizeof(block_header)) //if the memory left is greater than blockheader size
          {
-           if(space >= 4) //if there is memory left including blockheader size great than 4
+           if(space > 4) //if there is memory left including blockheader size great than 4
            {
              /* parameters are met to split memory sufficiently*/
              while(space % 4 != 0) //round down left over memory to multiple of 4

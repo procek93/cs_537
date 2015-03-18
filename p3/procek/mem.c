@@ -35,6 +35,7 @@ static int slab_chunk;
 static int slab_fl = 0;
 
 static int nf_once = 0;
+static int freed_after_empty = 0;
 
 //top of slab list & NF REGION
 void * slab_head = NULL;
@@ -287,6 +288,8 @@ static void * nf_alloc(int size){
 
 	int request_size = size;
 	int first_loop = 0;
+	int prior_head_node_found = 0;
+	int size_allocated = 0;
 
 	/*following temp headers are char * to do byte arithemetic*/
 	char * split_loc = NULL;
@@ -302,6 +305,10 @@ static void * nf_alloc(int size){
 	FreeHeader * self_catch = NULL;
 
 	FreeHeader * split = NULL;
+	FreeHeader * head_looper = NULL;
+
+	//header used to return the address
+	AllocatedHeader * ret = NULL;
 
 	/*variables for space calculations & predictions*/
 	int leftover = 0;
@@ -316,8 +323,16 @@ static void * nf_alloc(int size){
 		last_location = nf_head_l;
 		nf_once++;
 	}
+
+	if(freed_after_empty == 1)
+	{
+		last_location = nf_head_l;
+		freed_after_empty == 0;
+	}
 		
 	self_catch = NULL;
+
+	previous = last_location;
 
 	//idea is to loop until you end up back where you started
 	//self_catch will be NULL, then after entering the loop
@@ -326,12 +341,12 @@ static void * nf_alloc(int size){
 
 	/*search through memory to find unallocated block using next fit*/
 	/*allocate if possible*/
-	while((last_location != self_catch) && (last_location != NULL))
+	while((last_location != self_catch) && (nf_head_l != NULL))
 	{
 		if(first_loop == 0)
 		{
 			//set rover pointer to where last free location was
-			self_catch = last_location;
+			self_catch = last_location; 
 			//you only want self_catch to obtain last_location once per instantiation
 			first_loop++;
 		}
@@ -349,10 +364,10 @@ static void * nf_alloc(int size){
 			{
 				if(space >= 4)//is remaining space enough for at least smallest request (4 bytes)
 				{
-					//parameters for memory split sufficient
+					/**parameters for memory split sufficient**/
 
 					//begin pointer arithmetic with starting location
-					h_begin = (char *)last_location; //cast to char to byte arithmetic
+					h_begin = (char *)self_catch; //cast to char to byte arithmetic
 					//move into where the free mem is (past the header)
 					mem_begin = h_begin + (int)sizeof(FreeHeader); 
 					//give this current header exactly the request size in bytes
@@ -360,8 +375,226 @@ static void * nf_alloc(int size){
 					split_loc = mem_begin + request_size;
 					//create the new header
 					split = (FreeHeader*)split_spot;
-					...
+					//denote the space left
+					split->length = space;
+					self_catch->length = request_size;
+					/*NOW LINK/CAST NODES APPROPRIATELY*/
+					//new free head points to what the now allocated head pointed to
+
+					/*SPECIAL CASE:: NODE ALLOCATING IS HEAD*/
+					if(self_catch == nf_head_l)
+					{
+						//if the now allocated node happened to 
+						//be the head node, shift the head node
+						//to the now free node
+						nf_head_l = split;
+	
+						//check if the original head pointed to itself
+						if(self_catch->next == self_catch)
+						{
+							//means it was the only node around, what a scrub
+							//new head will loop into itself too
+							/*this happens w/ all mallocs and no frees*/
+							nf_head_l->next = nf_head_l;
+						}
+						else
+						{
+							//means that the head node connects to another node
+							//MUST FIND THE NODE THAT LINKS BACK TO THIS
+							//HEADNODE THATS ABOUT TO DETACH
+							while(!prior_head_node_found)
+							{
+								head_looper = self_catch->next;
+
+								//check every node down the chain
+								//to find which connects back to head
+								if(head_looper->next == self_catch)
+								{
+									//found the node, break
+									prior_head_node_found = 1;
+								}
+							}
+		
+							/*connect the nodes now appropriately*/
+							//new head gets old heads next
+							nf_head_l->next = self_catch->next;
+							//make the node that looped back to head
+							//loop back to updated head
+							head_looper->next = nf_head_l;
+
+							//going to start from the head again next
+							//iteration
+							last_location = nf_head_l; 
+						}
+
+					}
+					
+					/*CASE 2:: NODE ALLOCATING IS NOT HEAD*/
+					//THIS MEANS WE HAVE PASSED THE HEAD, MEANING 
+					//WE KNOW THIS CURRENT NODES PREVIOUS NODE, AND NEXT
+					split->next = self_catch->next;
+					previous->next = split;
+
+					//preserve where we left off
+					last_location = split;
+
+					//pop allocated out of the chain 
+					size_allocated = self_catch->length;
+					ret = (AllocatedHeader *)self_catch;
+					ret->length = size_allocated;
+			
+					return ret;
+										
 				}
+				//if chose to split, there wouldnt be enough mem for both
+				//head and adequate data, instead, give whatever remainder region
+				//exists back to the user, allocate, and relink the lists
+
+				/*CASE 1::WE ARE @ HEAD*/
+				if(self_catch == nf_head_l)
+				{
+				
+					/*HEAD IS THE ONLY NODE LEFT (IT LINKS BACK TO ITSELF)*/
+					/**MAKE THE LIST HEADER = NULL**/
+					if(self_catch->next == self_catch)
+					{
+						//pop allocated out of the chain 
+						size_allocated = self_catch->length;
+						ret = (AllocatedHeader *)self_catch;
+						ret->length = size_allocated;
+
+						//list now empty
+						nf_head_l = NULL;
+	
+						return ret;
+					}
+					else
+					{
+						//means that the head node connects to another node
+						//MUST FIND THE NODE THAT LINKS BACK TO THIS
+						//HEADNODE THATS ABOUT TO DETACH
+						
+						//also, the node ahead of head thats popping off 
+						//becomes the new head node		
+						nf_head_l = self_catch->next;
+
+						while(!prior_head_node_found)
+						{
+							head_looper = self_catch->next;
+
+							//check every node down the chain
+							//to find which connects back to head
+							if(head_looper->next == self_catch)
+							{
+								//found the node, break
+								prior_head_node_found = 1;
+							}
+						}
+		
+						/*connect the nodes now appropriately*/
+						head_looper->next = nf_head_l;
+
+						//going to start from the head again next
+						//iteration
+						last_location = nf_head_l; 
+
+						//pop allocated out of the chain 
+						size_allocated = self_catch->length;
+						ret = (AllocatedHeader *)self_catch;
+						ret->length = size_allocated;
+
+						return ret;
+					}
+
+					/*CASE 2:: NODE ALLOCATING IS NOT HEAD*/
+					//THIS MEANS WE HAVE PASSED THE HEAD, MEANING 
+					//WE KNOW THIS CURRENT NODES PREVIOUS NODE, AND NEXT
+					previous->next = self_catch->next;
+
+					//preserve where we left off
+					last_location = self_catch->next;
+
+					//pop allocated out of the chain 
+					size_allocated = self_catch->length;
+					ret = (AllocatedHeader *)self_catch;
+					ret->length = size_allocated;
+			
+					return ret;
+				}
+			}
+			//if we chose to split here, there wouldnt even be enough mem left
+			//to fit a new header, instead, just give user this entire space.
+
+			/*CASE 1::WE ARE @ HEAD*/
+			if(self_catch == nf_head_l)
+			{
+				
+				/*HEAD IS THE ONLY NODE LEFT (IT LINKS BACK TO ITSELF)*/
+				/**MAKE THE LIST HEADER = NULL**/
+				if(self_catch->next == self_catch)
+				{
+					//pop allocated out of the chain 
+					size_allocated = self_catch->length;
+					ret = (AllocatedHeader *)self_catch;
+					ret->length = size_allocated;
+
+					//list now empty
+					nf_head_l = NULL;
+	
+					return ret;
+				}
+				else
+				{
+					//means that the head node connects to another node
+					//MUST FIND THE NODE THAT LINKS BACK TO THIS
+					//HEADNODE THATS ABOUT TO DETACH
+						
+					//also, the node ahead of head thats popping off 
+					//becomes the new head node		
+					nf_head_l = self_catch->next;
+
+					while(!prior_head_node_found)
+					{
+						head_looper = self_catch->next;
+
+						//check every node down the chain
+						//to find which connects back to head
+						if(head_looper->next == self_catch)
+						{
+							//found the node, break
+							prior_head_node_found = 1;
+						}
+					}
+		
+					/*connect the nodes now appropriately*/
+					head_looper->next = nf_head_l;
+
+					//going to start from the head again next
+					//iteration
+					last_location = nf_head_l; 
+
+					//pop allocated out of the chain 
+					size_allocated = self_catch->length;
+					ret = (AllocatedHeader *)self_catch;
+					ret->length = size_allocated;
+
+					return ret;
+				}
+
+				/*CASE 2:: NODE ALLOCATING IS NOT HEAD*/
+				//THIS MEANS WE HAVE PASSED THE HEAD, MEANING 
+				//WE KNOW THIS CURRENT NODES PREVIOUS NODE, AND NEXT
+				previous->next = self_catch->next;
+
+				//preserve where we left off
+				last_location = self_catch->next;
+
+				//pop allocated out of the chain 
+				size_allocated = self_catch->length;
+				ret = (AllocatedHeader *)self_catch;
+				ret->length = size_allocated;
+			
+				return ret;
 			}
 		}
 		//block isn't big enough for our request
@@ -374,6 +607,10 @@ static void * nf_alloc(int size){
 			
 		}
 	}
+	//either no sufficient blocks found
+	//or mem available to begin with
+	return NULL;
+}
 			
 
 		
