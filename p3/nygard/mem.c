@@ -5,7 +5,7 @@
  * PROVIDES: Contains a set of library functions for memory 
  * *****************************************************************************/
 
-#include <mymem.h>
+#include "mymem.h"
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -105,7 +105,7 @@ void * Mem_Init(int sizeOfRegion, int slabSize)
   //only block in free list
   slab_head_l->next = NULL;
   //*SIZE STORED IN BLOCK EXCLUDES HEADER SPACE
-  slab_head_l->length = (alloc_size/4) - (int)sizeof(FreeHeader);
+  slab_head_l->length = (alloc_size/4) - (int)sizeof(struct FreeHeader);
 
   //first 25% of memory dedicated to slab
   //so list for next_fit allocation comes next
@@ -354,13 +354,13 @@ static void * nf_alloc(int size){
 		//premptively calculate possible memory that'd be left if we allocate here
 		leftover = (self_catch->length) - request_size;
 		//memory left after we'd allocate the header + request (aka the possible next split free block)
-		space = leftover - (int)sizeof(FreeHeader);
+		space = leftover - (int)sizeof(struct FreeHeader);
 		
 		//we will hit only free blocks on iterations, point is to find
 		//the adequate size
 		if((self_catch->length) >= request_size)//enough memory to meet just the request?
 		{
-			if(leftover > (int)sizeof(FreeHeader))//is freespace-request enough to fit header too?
+			if(leftover > (int)sizeof(struct FreeHeader))//is freespace-request enough to fit header too?
 			{
 				if(space >= 4)//is remaining space enough for at least smallest request (4 bytes)
 				{
@@ -369,7 +369,7 @@ static void * nf_alloc(int size){
 					//begin pointer arithmetic with starting location
 					h_begin = (char *)self_catch; //cast to char to byte arithmetic
 					//move into where the free mem is (past the header)
-					mem_begin = h_begin + (int)sizeof(FreeHeader); 
+					mem_begin = h_begin + (int)sizeof(struct FreeHeader); 
 					//give this current header exactly the request size in bytes
 					//we will now point to where a new header will go (to split & link)
 					split_loc = mem_begin + request_size;
@@ -767,6 +767,22 @@ static int nf_free(void * ptr){
   // Traverse the free list to get the 'end' of the circular queue.
   // That is, find the block that precededs the head of the free list
   // so that its next field may be updated to the new free list head
+  
+  if ( curr == NULL )
+  {
+  	// Make the ptr the new head of the free list if the free
+	// list was empty, and loop it back to itself
+	ptr->length = ptr_length;
+	ptr->next = ptr;
+	nf_head_l = ptr;
+
+	// Set a flag for the allocation code
+	freed_after_empty = 1;
+	
+	// Return success
+	return 0;
+  }
+
   list_end = nf_head_l;
   list_end_next = list_end->next;
 	
@@ -780,7 +796,7 @@ static int nf_free(void * ptr){
   if ( ptr < curr ) {
 	
 	// Pointer arithmetic swag
-	next_ptr = (char*) ptr + ptr_length + (int)sizeof(FreeHeader);
+	next_ptr = (char*) ptr + ptr_length + (int)sizeof(struct FreeHeader);
 
 	// If the freed block can be coalesced with the head of the free list
 	if ( next_ptr == (char*) curr )
@@ -789,7 +805,7 @@ static int nf_free(void * ptr){
 		ptr->next = next;
 
 		// Set the length of the free block
-		add_length = (curr->length + (int)sizeof(FreeHeader));
+		add_length = (curr->length + (int)sizeof(struct FreeHeader));
 		ptr->length = add_length + ptr_length;
 
 		// Update loopback of circular queue
@@ -835,13 +851,13 @@ static int nf_free(void * ptr){
 	if ( one_block == 1 )
 	{	
 		// Pointer arithmetic swag
-		next_ptr = (char*) prev + prev->length + (int)sizeof(FreeHeader);
+		next_ptr = (char*) prev + prev->length + (int)sizeof(struct FreeHeader);
 
 		// Check for prev block coalescing
 		if ( next_ptr == ptr )
 		{
 			// Set the length of the free block
-			add_length = (ptr_length + (int)sizeof(FreeHeader));
+			add_length = (ptr_length + (int)sizeof(struct FreeHeader));
 			prev->length += add_length;
 
 			// No need to update the next pointer
@@ -865,7 +881,7 @@ static int nf_free(void * ptr){
 		if ( next_ptr == ptr )
 		{
 			// Set the length of the free block
-			add_length = (ptr_length + (int)sizeof(FreeHeader));
+			add_length = (ptr_length + (int)sizeof(struct FreeHeader));
 			prev->length += add_length;
 			ptr_length = ptr->length;
 
@@ -881,7 +897,7 @@ static int nf_free(void * ptr){
 		} 
 		
 		// Pointer arithmetic swag
-		next_ptr = (char*) ptr + ptr_length + (int)sizeof(FreeHeader);
+		next_ptr = (char*) ptr + ptr_length + (int)sizeof(struct FreeHeader);
 
 		// Check for next block coalescing
 		if ( next_ptr == curr )
@@ -890,7 +906,7 @@ static int nf_free(void * ptr){
 			ptr->next = next;
 
 			// Set the length of the free block
-			add_length = (curr->length + (int)sizeof(FreeHeader));
+			add_length = (curr->length + (int)sizeof(struct FreeHeader));
 			ptr->length += add_length;
 		
 		} else {
