@@ -42,8 +42,8 @@ void * slab_head = NULL;
 void * nf_head = NULL;
 
 //Headers for freelist for each region
-void * slab_head_l = NULL;
-void * nf_head_l = NULL;
+struct FreeHeader * slab_head_l = NULL;
+struct FreeHeader * nf_head_l = NULL;
 
 //last accessible address possible (SEG_FAULT_CHECK)
 void * EOL = NULL;
@@ -200,8 +200,8 @@ static void generate_slab(void){
 	void * tracker = NULL;
 	//temporary variable used to chain together
 	//a free list
-	FreeHeader * next = NULL;
-	FreeHeader * prev = NULL;
+	struct FreeHeader * next = NULL;
+	struct FreeHeader * prev = NULL;
 	//start at begining of list
 	prev = slab_head_l;
 	tracker = slab_head;
@@ -243,8 +243,8 @@ static void generate_slab(void){
 	
 static void * slab_alloc(int * fl){
 
-	FreeHeader * temp = NULL;
-	FreeHeader * aloc_location = NULL;
+	struct FreeHeader * temp = NULL;
+	struct FreeHeader * aloc_location = NULL;
 	void * clear_space = NULL;
 
 	//now do the check to see if all blocks allocated
@@ -297,18 +297,18 @@ static void * nf_alloc(int size){
 	char * mem_begin = NULL;
 
 	/*last_location static to keep location between instantiations*/
-	static FreeHeader * last_location;
+	static struct FreeHeader * last_location;
 
 	/*rover pointer that will search for a free block*/
 	/*and pointer to free block that always preceeds it*/
-	FreeHeader * previous = NULL;
-	FreeHeader * self_catch = NULL;
+	struct FreeHeader * previous = NULL;
+	struct FreeHeader * self_catch = NULL;
 
-	FreeHeader * split = NULL;
-	FreeHeader * head_looper = NULL;
+	struct FreeHeader * split = NULL;
+	struct FreeHeader * head_looper = NULL;
 
 	//header used to return the address
-	AllocatedHeader * ret = NULL;
+	struct AllocatedHeader * ret = NULL;
 
 	/*variables for space calculations & predictions*/
 	int leftover = 0;
@@ -673,9 +673,9 @@ int Mem_Free(void *ptr)
 static int slab_free(void * ptr){
 
   /* Local variables */
-  FreeHeader* curr = NULL;	/* Variable pointers to block_headers */
-  FreeHeader* prev = NULL;
-  FreeHeader* next = NULL;
+  struct FreeHeader* curr = NULL;	/* Variable pointers to block_headers */
+  struct FreeHeader* prev = NULL;
+  struct FreeHeader* next = NULL;
 
   /* Initialize variable pointers to block_headers */
 
@@ -734,12 +734,12 @@ static int slab_free(void * ptr){
 static int nf_free(void * ptr){
 
   /* Local variables */
-  FreeHeader* curr = NULL;	/* Variable pointers to block_headers */
-  FreeHeader* next = NULL;
-  FreeHeader* prev = NULL;
+  struct FreeHeader* curr = NULL;	/* Variable pointers to block_headers */
+  struct FreeHeader* next = NULL;
+  struct FreeHeader* prev = NULL;
 
-  FreeHeader* list_end = NULL;
-  FreeHeader* list_end_next = NULL;
+  struct FreeHeader* list_end = NULL;
+  struct FreeHeader* list_end_next = NULL;
 
   int one_block;			/* Variable used for circular buffer
   					   cycle detection with one free block */
