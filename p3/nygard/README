@@ -1,0 +1,8 @@
+Name: Peter Procek
+CSL-ID: procek
+Name: Graham Nygard
+CSL-ID: nygard
+
+Implementation Details:
+
+The memory allocator utilizes one slab and one next fit fit allocator. The first 1/4 of the requested memory space is dedicated to the slab allocator while the remaining 3/4 of the region uses the next fit algorithm. Pointer arithmetic all around.
