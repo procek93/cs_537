@@ -146,11 +146,13 @@ void * Mem_Init(int sizeOfRegion, int slabSize)
 /*returns ptr to adr of requested block on success.*/
 
 /*returns Null ptr on failure*/
+/*returns Null ptr on failure*/
 void * Mem_Alloc(int size){
 
 	int padding;
 	int alloc_size;
 	int req_size = size;
+	void * blah;
 
 	//always reset flag
 	slab_fl = 0;
@@ -164,11 +166,16 @@ void * Mem_Alloc(int size){
 	//check if the user requested a slab
 	if(req_size == g_slabSize)
 	{
+		blah = slab_alloc(&slab_fl);
 		//slab requested, attempt slab allocation
-		if(slab_alloc(&slab_fl) == NULL)
+		if(blah == NULL)
 		{
 			//error
 			return NULL;
+		}
+		else
+		{
+			return blah;
 		}
 	}
 
@@ -185,19 +192,30 @@ void * Mem_Alloc(int size){
 	//in non slab request size, or slab allocation failed
 	if(slab_fl == 0)
 	{
-		if(nf_alloc(alloc_size) == NULL)
+		blah = nf_alloc(alloc_size);
+		if(blah == NULL)
 		{
 			//not enough contiguous space
 			return NULL;
+		}
+		else
+		{
+			return blah;
 		}
 	}
 	else
 	if(slab_fl == 2)//slab fit failed
 	{
-		if(nf_alloc(req_size) == NULL)
+		blah = nf_alloc(req_size);
+
+		if(blah == NULL)
 		{
 			//not enough contiguous space
 			return NULL;
+		}
+		else
+		{
+			return blah;
 		}
 	}
 
@@ -242,17 +260,18 @@ static void generate_slab(void){
 		orig_length = nf_head_l->length;
 		diff = (alloc_size/4) - pad;
 		
-		nf_head = (char *)slab_head + pad;
-
-		
-		nf_head_l = (struct FreeHeader *)(nf_head);
-
-		nf_head_l->length = orig_length + diff;
 	}	
 	
+	//**POST TURN IN FIX*****************************
+	//WE HAVE TO SET THE SIZE IF WE KNOW WE ARE GONNA
+	//PARTITION
+	if(!(tracker > nf_head))
+	{
+		slab_head_l->length = g_slabSize;
+	}
 
 	//begin chaining together freespace
-	while(tracker != nf_head)
+	while(tracker < nf_head)
 	{
 		next = (struct FreeHeader *)(tracker);
 		//Though we know the slabsize, set it
@@ -269,6 +288,12 @@ static void generate_slab(void){
 		//check if we have space for more slabs
 		tracker = (char*)tracker + slab_chunk;
 	}
+
+	next->length += diff;
+
+	//**POST TURN IN FIX
+	//FORGOT TO SET LENGTH PARAMETER OF HEAD AND FORGOT TO RESET HEAD OF FREELIST
+	slab_head_l = ((struct FreeHeader *)slab_head);
 
 	//reached end of slab region
 	//point it to magic number rather than NULL
@@ -488,7 +513,7 @@ static void * nf_alloc(int size){
 					ret->length = size_allocated;
 					ret->magic = (void *)MAGIC;
 			
-					return ret;
+					return ((char *)ret + sizeof(struct AllocatedHeader));
 										
 				}
 				//if chose to split, there wouldnt be enough mem for both
@@ -512,7 +537,7 @@ static void * nf_alloc(int size){
 						nf_head_l = NULL;
 						freed_after_empty = 0;
 	
-						return ret;
+						return ((char *)ret + sizeof(struct AllocatedHeader));
 					}
 					else
 					{
@@ -550,7 +575,7 @@ static void * nf_alloc(int size){
 						ret->length = size_allocated;
 						ret->magic = (void *)MAGIC;
 
-						return ret;
+						return ((char *)ret + sizeof(struct AllocatedHeader));
 					}
 				}
 				else
@@ -570,7 +595,7 @@ static void * nf_alloc(int size){
 				ret->length = size_allocated;
 				ret->magic = (void *)MAGIC;
 			
-				return ret;
+				return ((char *)ret + sizeof(struct AllocatedHeader));
 
 			}
 			//if chose to split, there wouldnt be enough mem for both
@@ -594,7 +619,7 @@ static void * nf_alloc(int size){
 					nf_head_l = NULL;
 					freed_after_empty = 0;
 
-					return ret;
+					return ((char *)ret + sizeof(struct AllocatedHeader));
 				}
 				else
 				{
@@ -631,7 +656,7 @@ static void * nf_alloc(int size){
 					ret->length = size_allocated;
 					ret->magic = (void *)MAGIC;
 
-					return ret;
+					return ((char *)ret + sizeof(struct AllocatedHeader));
 				}
 			}
 			else
@@ -651,7 +676,7 @@ static void * nf_alloc(int size){
 			ret->length = size_allocated;
 			ret->magic = (void *)MAGIC;
 		
-			return ret;
+			return ((char *)ret + sizeof(struct AllocatedHeader));
 		}
 		//block isn't big enough for our request
 		else
@@ -671,12 +696,14 @@ static void * nf_alloc(int size){
 int Mem_Free(void *ptr)
 {
   // Grab that lock away from the other threads
-  pthread_mutex_lock(&free_lock);	
+ // pthread_mutex_lock(&free_lock);	
+
+  ptr -= sizeof(struct AllocatedHeader);
 
   if ( ptr == NULL )
   {
 	// Let it go..
-	pthread_mutex_unlock(&free_lock);	
+	//pthread_mutex_unlock(&free_lock);	
   
   	return 0;		/* Check if ptr parameter is NULL,
   				 * and simply return */
@@ -689,7 +716,7 @@ int Mem_Free(void *ptr)
 	fprintf(stdout, "SEGFAULT\n");
 	
 	// Let it go..
-	pthread_mutex_unlock(&free_lock);	
+	//pthread_mutex_unlock(&free_lock);	
 	
 	return -1;
   }
@@ -709,7 +736,7 @@ int Mem_Free(void *ptr)
         } else {
 
   		// Let it go..
-  		pthread_mutex_unlock(&free_lock);	
+  		//pthread_mutex_unlock(&free_lock);	
 		
 		return -1;
 	}
@@ -728,7 +755,7 @@ int Mem_Free(void *ptr)
 	} else {
 		
   		// Let it go..
-  		pthread_mutex_unlock(&free_lock);	
+  		//pthread_mutex_unlock(&free_lock);	
 		
 		return -1;
 	}
@@ -749,7 +776,7 @@ static int slab_free(void * ptr){
 
   curr = slab_head_l;
   
-  ptr = (struct FreeHeader *)ptr;
+ // ptr = (char *)ptr - sizeof(struct AllocatedHeader);
   /* Slab insertion into the free list below */
  
   // If the free list is empty, make the specified pointer the
@@ -760,7 +787,7 @@ static int slab_free(void * ptr){
 
 
 	// Let it go..
-	pthread_mutex_unlock(&free_lock);	
+	//pthread_mutex_unlock(&free_lock);	
 	
 	return 0;
   }
@@ -776,7 +803,7 @@ static int slab_free(void * ptr){
 		((struct FreeHeader *)ptr)->next = NULL;
 			
   		// Let it go..
-  		pthread_mutex_unlock(&free_lock);	
+  		//pthread_mutex_unlock(&free_lock);	
 		
 		return 0;
 	}
@@ -804,7 +831,7 @@ static int slab_free(void * ptr){
   }
   
   // Let it go..
-  pthread_mutex_unlock(&free_lock);	
+  //pthread_mutex_unlock(&free_lock);	
   
   return 0;
 
@@ -857,7 +884,7 @@ static int nf_free(void * ptr){
 	freed_after_empty = 1;
 	
 	// Let it go..
-	pthread_mutex_unlock(&free_lock);	
+	//pthread_mutex_unlock(&free_lock);	
 	
 	// Return success
 	return 0;
@@ -1000,7 +1027,7 @@ static int nf_free(void * ptr){
   }  
 
   // Let it go..
-  pthread_mutex_unlock(&free_lock);	
+  //pthread_mutex_unlock(&free_lock);	
   
   // Return success
   return 0;
