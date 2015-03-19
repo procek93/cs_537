@@ -53,9 +53,9 @@ struct FreeHeader * nf_head_l = NULL;
 void * EOL = NULL;
 
 // Initialize the locks
-pthread_mutex_t init_lock;// = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t free_lock;// = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t alloc_lock;// = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t init_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t free_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t alloc_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /***********************************************************************************************************/
 
@@ -65,6 +65,7 @@ pthread_mutex_t alloc_lock;// = PTHREAD_MUTEX_INITIALIZER;
 /* Returns 0 on success and -1 on failure */
 void * Mem_Init(int sizeOfRegion, int slabSize)
 {
+  pthread_mutex_lock(&init_lock);
   int pagesize;
   int padding;
   void* space_ptr;
@@ -76,6 +77,7 @@ void * Mem_Init(int sizeOfRegion, int slabSize)
   //then error
   if(0 != allocated_once || sizeOfRegion <= 0)
   {
+    pthread_mutex_unlock(&init_lock);
     return NULL;
   }
 
@@ -99,6 +101,7 @@ void * Mem_Init(int sizeOfRegion, int slabSize)
   if (MAP_FAILED == space_ptr)
   {
     //mapped memory allocation failed
+    pthread_mutex_unlock(&init_lock);
     return NULL;
   }
   
@@ -138,6 +141,7 @@ void * Mem_Init(int sizeOfRegion, int slabSize)
   numSlabs = (alloc_size/4)/slab_chunk;
   
   //return the addr of the entire piece of memory
+  pthread_mutex_unlock(&init_lock);
   return space_ptr;
 }
 
@@ -149,6 +153,7 @@ void * Mem_Init(int sizeOfRegion, int slabSize)
 /*returns Null ptr on failure*/
 void * Mem_Alloc(int size){
 
+        pthread_mutex_lock(&alloc_lock);
 	int padding;
 	int alloc_size;
 	int req_size = size;
@@ -160,6 +165,7 @@ void * Mem_Alloc(int size){
 	//sanity check request size
 	if(req_size < 0)
 	{
+       		pthread_mutex_unlock(&alloc_lock);
 		return NULL;
 	}
 
@@ -171,10 +177,12 @@ void * Mem_Alloc(int size){
 		if(blah == NULL)
 		{
 			//error
+		        pthread_mutex_unlock(&alloc_lock);
 			return NULL;
 		}
 		else
 		{
+		        pthread_mutex_unlock(&alloc_lock);
 			return blah;
 		}
 	}
@@ -196,10 +204,12 @@ void * Mem_Alloc(int size){
 		if(blah == NULL)
 		{
 			//not enough contiguous space
+		        pthread_mutex_unlock(&alloc_lock);
 			return NULL;
 		}
 		else
 		{
+		        pthread_mutex_unlock(&alloc_lock);
 			return blah;
 		}
 	}
@@ -211,14 +221,17 @@ void * Mem_Alloc(int size){
 		if(blah == NULL)
 		{
 			//not enough contiguous space
+		        pthread_mutex_unlock(&alloc_lock);
 			return NULL;
 		}
 		else
 		{
+		        pthread_mutex_unlock(&alloc_lock);
 			return blah;
 		}
 	}
 
+        pthread_mutex_unlock(&alloc_lock);
 	return NULL;
 		
 }
@@ -696,14 +709,14 @@ static void * nf_alloc(int size){
 int Mem_Free(void *ptr)
 {
   // Grab that lock away from the other threads
- // pthread_mutex_lock(&free_lock);	
+ pthread_mutex_lock(&free_lock);	
 
   ptr -= sizeof(struct AllocatedHeader);
 
   if ( ptr == NULL )
   {
 	// Let it go..
-	//pthread_mutex_unlock(&free_lock);	
+	pthread_mutex_unlock(&free_lock);	
   
   	return 0;		/* Check if ptr parameter is NULL,
   				 * and simply return */
@@ -716,7 +729,7 @@ int Mem_Free(void *ptr)
 	fprintf(stdout, "SEGFAULT\n");
 	
 	// Let it go..
-	//pthread_mutex_unlock(&free_lock);	
+	pthread_mutex_unlock(&free_lock);	
 	
 	return -1;
   }
@@ -730,13 +743,14 @@ int Mem_Free(void *ptr)
         // Check if the specified block is allocated
         if ( (((struct AllocatedHeader*)ptr)->magic) == (void*)MAGIC )
         {
+		pthread_mutex_unlock(&free_lock);
 		return nf_free(ptr);
 	
 	// Trying to free an unallocated block results in error
         } else {
 
   		// Let it go..
-  		//pthread_mutex_unlock(&free_lock);	
+  		pthread_mutex_unlock(&free_lock);	
 		
 		return -1;
 	}
@@ -749,13 +763,14 @@ int Mem_Free(void *ptr)
 	// Check if the specified block is a valid slab	
   	if ( (((struct FreeHeader*)ptr)->length) == g_slabSize )
 	{
+		pthread_mutex_unlock(&free_lock);
 		return slab_free((struct FreeHeader*)ptr);
 
 	// Trying to free an invalid slab results in error
 	} else {
 		
   		// Let it go..
-  		//pthread_mutex_unlock(&free_lock);	
+  		pthread_mutex_unlock(&free_lock);	
 		
 		return -1;
 	}
@@ -864,7 +879,13 @@ static int nf_free(void * ptr){
 
   curr = nf_head_l;
 
-  next = curr->next;
+  //***POST TURN IN FIX
+  //IF EMPTY LIST, TRYING TO REFERENCE NEXT FIELD OF NULL
+  //---->SEG FAULT!! CHECK THAT NOT NULL!
+  if(curr != NULL)
+  {
+  	next = curr->next;
+  }
 
   ptr_length = ((struct AllocatedHeader *)ptr)->length;
 
@@ -1033,3 +1054,5 @@ static int nf_free(void * ptr){
   return 0;
 
 } // End of nf_free
+			
+
