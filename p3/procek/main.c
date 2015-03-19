@@ -640,3 +640,17 @@ static void * nf_alloc(int size){
 	//or mem available to begin with
 	return NULL;
 }
+			
+int main(int argc, char *argv[])
+{
+
+	//char * string;
+	
+	//1024 byte region
+	//slab size is 4
+	//first 256 bytes is slab
+	//rest is NF
+	Mem_Init(1024, 4);
+
+	return 0;
+}

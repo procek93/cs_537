@@ -101,6 +101,9 @@ void * Mem_Init(int sizeOfRegion, int slabSize)
   slab_head = space_ptr;
   nf_head = ((char *)space_ptr + (alloc_size/4));
 
+  //set slabChunk
+  slab_chunk = (int)sizeof(struct FreeHeader) + g_slabSize;
+
   //return begining of the large free block, which will
   //also serve as the begining of the slab block
   slab_head_l = (struct FreeHeader *)space_ptr;
@@ -116,14 +119,11 @@ void * Mem_Init(int sizeOfRegion, int slabSize)
   nf_head_l->next = nf_head_l;
   nf_head_l->length = ((3*alloc_size)/4) - (int)sizeof(struct FreeHeader);
 
-  //mark end of list (final addressable memory slot)
-  EOL = (char *)space_ptr + (alloc_size - 1);
-
   //now segment the slab_space
   generate_slab();
 
-  //set slabChunk
-  slab_chunk = (int)sizeof(struct FreeHeader) + g_slabSize;
+  //mark end of list (final addressable memory slot)
+  EOL = (char *)space_ptr + (alloc_size - 1);
 
   //set number of slabs
   numSlabs = (alloc_size/4)/slab_chunk;
@@ -135,6 +135,7 @@ void * Mem_Init(int sizeOfRegion, int slabSize)
 /*function is in charge of doling out memory.*/ 
 /*provides ptr to the requested chunk of memory.*/
 /*returns ptr to adr of requested block on success.*/
+
 /*returns Null ptr on failure*/
 void * Mem_Alloc(int size){
 
@@ -199,6 +200,9 @@ void * Mem_Alloc(int size){
 /*and should only be called by mem_init*/
 static void generate_slab(void){
 	
+	int pad = 0;
+	int diff = 0;
+	int orig_length = 0;
 	//variable used to keep track of where
 	//in memory we are
 	void * tracker = NULL;
@@ -215,6 +219,28 @@ static void generate_slab(void){
 	//enough space for one slab to begin with
 	//*keep from making part of NF_alloc a slab
 	tracker = (char *)tracker + slab_chunk;
+
+	//make sure to give left overs to the next fit 
+	//region if slab blocks dont perfectly divide
+	if((alloc_size/4)%slab_chunk != 0)
+	{
+		while(pad < (alloc_size/4))
+		{
+			pad += slab_chunk;
+		}
+	
+		pad -= slab_chunk;
+		orig_length = nf_head_l->length;
+		diff = (alloc_size/4) - pad;
+		
+		nf_head = (char *)slab_head + pad;
+
+		
+		nf_head_l = (struct FreeHeader *)(nf_head);
+
+		nf_head_l->length = orig_length + diff;
+	}	
+	
 
 	//begin chaining together freespace
 	while(tracker != nf_head)
@@ -614,24 +640,3 @@ static void * nf_alloc(int size){
 	//or mem available to begin with
 	return NULL;
 }
-			
-
-		
-		
-
-	
-
-	
-	
-	
-	
-	
-	
-
-	
-
-	
-
-
-
-
