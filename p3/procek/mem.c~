@@ -394,6 +394,10 @@ static void * nf_alloc(int size){
 				if(space >= 4)//is remaining space enough for at least smallest request (4 bytes)
 				{
 					/**parameters for memory split sufficient**/
+             				while(space % 4 != 0) //round down left over memory to multiple of 4
+            				 {
+            					   space--;
+            				 }
 
 					//begin pointer arithmetic with starting location
 					h_begin = (char *)self_catch; //cast to char to byte arithmetic
@@ -457,12 +461,15 @@ static void * nf_alloc(int size){
 						}
 
 					}
+					else
+					{
 					
-					/*CASE 2:: NODE ALLOCATING IS NOT HEAD*/
-					//THIS MEANS WE HAVE PASSED THE HEAD, MEANING 
-					//WE KNOW THIS CURRENT NODES PREVIOUS NODE, AND NEXT
-					split->next = self_catch->next;
-					previous->next = split;
+						/*CASE 2:: NODE ALLOCATING IS NOT HEAD*/
+						//THIS MEANS WE HAVE PASSED THE HEAD, MEANING 
+						//WE KNOW THIS CURRENT NODES PREVIOUS NODE, AND NEXT
+						split->next = self_catch->next;
+						previous->next = split;
+					}
 
 					//preserve where we left off
 					last_location = split;
@@ -471,6 +478,7 @@ static void * nf_alloc(int size){
 					size_allocated = self_catch->length;
 					ret = (struct AllocatedHeader *)self_catch;
 					ret->length = size_allocated;
+					ret->magic = (void *)MAGIC;
 			
 					return ret;
 										
@@ -494,6 +502,7 @@ static void * nf_alloc(int size){
 
 						//list now empty
 						nf_head_l = NULL;
+						freed_after_empty = 0;
 	
 						return ret;
 					}
@@ -531,89 +540,18 @@ static void * nf_alloc(int size){
 						size_allocated = self_catch->length;
 						ret = (struct AllocatedHeader *)self_catch;
 						ret->length = size_allocated;
+						ret->magic = (void *)MAGIC;
 
 						return ret;
 					}
-
+				}
+				else
+				{
 					/*CASE 2:: NODE ALLOCATING IS NOT HEAD*/
 					//THIS MEANS WE HAVE PASSED THE HEAD, MEANING 
 					//WE KNOW THIS CURRENT NODES PREVIOUS NODE, AND NEXT
 					previous->next = self_catch->next;
-
-					//preserve where we left off
-					last_location = self_catch->next;
-
-					//pop allocated out of the chain 
-					size_allocated = self_catch->length;
-					ret = (struct AllocatedHeader *)self_catch;
-					ret->length = size_allocated;
-			
-					return ret;
 				}
-			}
-			//if we chose to split here, there wouldnt even be enough mem left
-			//to fit a new header, instead, just give user this entire space.
-
-			/*CASE 1::WE ARE @ HEAD*/
-			if(self_catch == nf_head_l)
-			{
-				
-				/*HEAD IS THE ONLY NODE LEFT (IT LINKS BACK TO ITSELF)*/
-				/**MAKE THE LIST HEADER = NULL**/
-				if(self_catch->next == self_catch)
-				{
-					//pop allocated out of the chain 
-					size_allocated = self_catch->length;
-					ret = (struct AllocatedHeader *)self_catch;
-					ret->length = size_allocated;
-
-					//list now empty
-					nf_head_l = NULL;
-	
-					return ret;
-				}
-				else
-				{
-					//means that the head node connects to another node
-					//MUST FIND THE NODE THAT LINKS BACK TO THIS
-					//HEADNODE THATS ABOUT TO DETACH
-						
-					//also, the node ahead of head thats popping off 
-					//becomes the new head node		
-					nf_head_l = self_catch->next;
-
-					while(!prior_head_node_found)
-					{
-						head_looper = self_catch->next;
-
-						//check every node down the chain
-						//to find which connects back to head
-						if(head_looper->next == self_catch)
-						{
-							//found the node, break
-							prior_head_node_found = 1;
-						}
-					}
-		
-					/*connect the nodes now appropriately*/
-					head_looper->next = nf_head_l;
-
-					//going to start from the head again next
-					//iteration
-					last_location = nf_head_l; 
-
-					//pop allocated out of the chain 
-					size_allocated = self_catch->length;
-					ret = (struct AllocatedHeader *)self_catch;
-					ret->length = size_allocated;
-
-					return ret;
-				}
-
-				/*CASE 2:: NODE ALLOCATING IS NOT HEAD*/
-				//THIS MEANS WE HAVE PASSED THE HEAD, MEANING 
-				//WE KNOW THIS CURRENT NODES PREVIOUS NODE, AND NEXT
-				previous->next = self_catch->next;
 
 				//preserve where we left off
 				last_location = self_catch->next;
@@ -622,8 +560,10 @@ static void * nf_alloc(int size){
 				size_allocated = self_catch->length;
 				ret = (struct AllocatedHeader *)self_catch;
 				ret->length = size_allocated;
+				ret->magic = (void *)MAGIC;
 			
 				return ret;
+
 			}
 		}
 		//block isn't big enough for our request
