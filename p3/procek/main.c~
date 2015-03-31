@@ -1,0 +1,1148 @@
+/******************************************************************************
+ * FILENAME: mem.c
+ * AUTHOR:   procek@wisc.edu <Peter Procek>, gnygard@wisc.edu <Graham Nygard>
+ * DATE:     15 March 2015
+ * PROVIDES: Contains a set of library functions for memory 
+ * *****************************************************************************/
+
+#include "mymem.h"
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <string.h>
+#include <stdio.h>
+#include <pthread.h>
+#include <assert.h>
+#include <stdlib.h>
+
+
+/**********************************************************************************************PROCTORBROWN*/
+//create variable holder for slabSize request
+static int g_slabSize;
+
+//variable to hold padded allocation size
+//global to do arithmetic for slab allocator location
+static int alloc_size;
+
+//variable to signal how many slabs to expect
+static int numSlabs;
+
+//variable to specify size of slab+header
+static int slab_chunk;
+
+//flag to signal if we are to use slab allocation
+//states:
+//0 - slab not requested
+//1 - slab requested
+//2 - slab failed
+//*global declaration for optional thread optimizing*
+static int slab_fl = 0;
+
+static int nf_once = 0;
+static int freed_after_empty = 0;
+
+//top of slab list & NF REGION
+void * slab_head = NULL;
+void * nf_head = NULL;
+
+//Headers for freelist for each region
+struct FreeHeader * slab_head_l = NULL;
+struct FreeHeader * nf_head_l = NULL;
+
+//last accessible address possible (SEG_FAULT_CHECK)
+void * EOL = NULL;
+
+// Initialize the locks
+pthread_mutex_t init_lock;// = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t free_lock;// = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t alloc_lock;// = PTHREAD_MUTEX_INITIALIZER;
+
+/***********************************************************************************************************/
+
+/* Function used to Initialize the memory allocator */
+/* Not intended to be called more than once by a program */
+/* Argument - sizeOfRegion: Specifies the size of the chunk which needs to be allocated */
+/* Returns 0 on success and -1 on failure */
+void * Mem_Init(int sizeOfRegion, int slabSize)
+{
+  int pagesize;
+  int padding;
+  void* space_ptr;
+
+  //invoke static to retain value b/t invokations
+  static int allocated_once = 0;
+  
+  //if this method invoked more than once or if request innapropriate size
+  //then error
+  if(0 != allocated_once || sizeOfRegion <= 0)
+  {
+    return NULL;
+  }
+
+  //save the special slabSize
+  g_slabSize = slabSize;
+
+  /*create padding in requested memory as to provide natural alignment
+  /-->natural alignment incase user reqests memory not a multiple of pagesize*/
+
+  //Get pagesize (portable)
+  pagesize = sysconf(_SC_PAGESIZE);
+
+  // pad user requested memory to be multiple of page size
+  padding = sizeOfRegion % pagesize;
+  padding = (pagesize - padding) % pagesize;
+  alloc_size = sizeOfRegion + padding;
+
+  // use mmap to allocate memory 
+  // **non backed memory region
+  space_ptr = mmap(NULL, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (MAP_FAILED == space_ptr)
+  {
+    //mapped memory allocation failed
+    return NULL;
+  }
+  
+  //flag that we mapped to memory once now
+  allocated_once = 1;
+
+  /*CREATE ALL MARKERS AND POINTERS TO CRITICAL SECTIONS*/
+  //mark begining of each allocation type region
+  slab_head = space_ptr;
+  nf_head = ((char *)space_ptr + (alloc_size/4));
+
+  //set slabChunk
+  slab_chunk = (int)sizeof(struct FreeHeader) + g_slabSize;
+  
+  //return begining of the large free block, which will
+  //also serve as the begining of the slab block
+  slab_head_l = (struct FreeHeader *)space_ptr;
+  //only block in free list
+  slab_head_l->next = NULL;
+  //*SIZE STORED IN BLOCK EXCLUDES HEADER SPACE
+  slab_head_l->length = (alloc_size/4) - (int)sizeof(struct FreeHeader);
+
+  //first 25% of memory dedicated to slab
+  //so list for next_fit allocation comes next
+  nf_head_l = (struct FreeHeader *)((char *)space_ptr + (alloc_size/4));
+  //CREATE A CIRCULAR QUEUE
+  nf_head_l->next = nf_head_l;
+  nf_head_l->length = ((3*alloc_size)/4) - (int)sizeof(struct FreeHeader);
+
+  //now segment the slab_space
+  generate_slab();
+
+  //mark end of list (final addressable memory slot)
+  EOL = (char *)space_ptr + (alloc_size - 1);
+
+  //set number of slabs
+  numSlabs = (alloc_size/4)/slab_chunk;
+  
+  //return the addr of the entire piece of memory
+  return space_ptr;
+}
+
+/*function is in charge of doling out memory.*/ 
+/*provides ptr to the requested chunk of memory.*/
+/*returns ptr to adr of requested block on success.*/
+
+/*returns Null ptr on failure*/
+/*returns Null ptr on failure*/
+void * Mem_Alloc(int size){
+
+	int padding;
+	int alloc_size;
+	int req_size = size;
+	void * blah;
+
+	//always reset flag
+	slab_fl = 0;
+	
+	//sanity check request size
+	if(req_size < 0)
+	{
+		return NULL;
+	}
+
+	//check if the user requested a slab
+	if(req_size == g_slabSize)
+	{
+		blah = slab_alloc(&slab_fl);
+		//slab requested, attempt slab allocation
+		if(blah == NULL)
+		{
+			//error
+			return NULL;
+		}
+		else
+		{
+			return blah;
+		}
+	}
+
+	//if the user requested a next fit piece of
+	//memory, make it 16-byte aligned
+	if(slab_fl == 0)
+	{
+		padding = req_size % 16;
+		padding = (16 - padding) % 16;
+		alloc_size = req_size + padding;
+	}	
+
+	//attempt next fit allocation if either user passed
+	//in non slab request size, or slab allocation failed
+	if(slab_fl == 0)
+	{
+		blah = nf_alloc(alloc_size);
+		if(blah == NULL)
+		{
+			//not enough contiguous space
+			return NULL;
+		}
+		else
+		{
+			return blah;
+		}
+	}
+	else
+	if(slab_fl == 2)//slab fit failed
+	{
+		blah = nf_alloc(req_size);
+
+		if(blah == NULL)
+		{
+			//not enough contiguous space
+			return NULL;
+		}
+		else
+		{
+			return blah;
+		}
+	}
+
+	return NULL;
+		
+}
+
+/*function segments the slab region into slabs of memory*/
+/*and should only be called by mem_init*/
+static void generate_slab(void){
+	
+	int pad = 0;
+	int diff = 0;
+	int orig_length = 0;
+	//variable used to keep track of where
+	//in memory we are
+	void * tracker = NULL;
+	//temporary variable used to chain together
+	//a free list
+	struct FreeHeader * next = NULL;
+	struct FreeHeader * prev = NULL;
+	//start at begining of list
+	prev = slab_head_l;
+	tracker = slab_head;
+
+	//do one look ahead to make sure we dont
+	//segment a slab in the event we only have 
+	//enough space for one slab to begin with
+	//*keep from making part of NF_alloc a slab
+	tracker = (char *)tracker + slab_chunk;
+
+	//make sure to give left overs to the next fit 
+	//region if slab blocks dont perfectly divide
+	if((alloc_size/4)%slab_chunk != 0)
+	{
+		while(pad < (alloc_size/4))
+		{
+			pad += slab_chunk;
+		}
+	
+		pad -= slab_chunk;
+		orig_length = nf_head_l->length;
+		diff = (alloc_size/4) - pad;
+		
+	}	
+	
+	//**POST TURN IN FIX*****************************
+	//WE HAVE TO SET THE SIZE IF WE KNOW WE ARE GONNA
+	//PARTITION
+	if(!(tracker > nf_head))
+	{
+		slab_head_l->length = g_slabSize;
+	}
+
+	//begin chaining together freespace
+	while(tracker < nf_head)
+	{
+		next = (struct FreeHeader *)(tracker);
+		//Though we know the slabsize, set it
+		//for integrity checking
+		next->length = g_slabSize;
+		next->next = NULL;
+
+		//link previous to next
+		prev->next = next;
+
+		//next node becomes previous on next iteration
+		prev = next;
+
+		//check if we have space for more slabs
+		tracker = (char*)tracker + slab_chunk;
+	}
+
+	next->length += diff;
+
+	//**POST TURN IN FIX
+	//FORGOT TO SET LENGTH PARAMETER OF HEAD AND FORGOT TO RESET HEAD OF FREELIST
+	slab_head_l = ((struct FreeHeader *)slab_head);
+
+	//reached end of slab region
+	//point it to magic number rather than NULL
+	//to avoid confusion b/t allocated node vs
+	//a node that happens to be last in list
+	prev->next = NULL;
+
+	return;	
+
+}
+	
+static void * slab_alloc(int * fl){
+
+	struct FreeHeader * aloc_location = NULL;
+	void * clear_space = NULL;
+
+	//now do the check to see if all blocks allocated
+	if(slab_head_l == NULL)
+	{
+		//signal that we must try next fit instead
+		*fl = 2;
+	}
+	else//a free node exists
+	{
+		//the slab_header_l will always point to top of the free list
+		//aka, it will always point to the first free block.
+		//regardless of how free rebuilds the list, the header ptr
+		//will always point to a free block (@top of list)
+
+		if(slab_head_l->next == NULL)
+		{
+			//the node is the only node that exists
+			aloc_location = slab_head_l;
+			//signal that slabs are exhausted
+			slab_head_l = NULL;
+		}
+		else
+		{
+			//there is more than one free node
+			//pop off the top
+			aloc_location = slab_head_l;
+			slab_head_l = aloc_location->next;
+		}	
+			
+		//succesful slab allocation
+		*fl = 1;
+	}
+
+	clear_space = (void*)((char *)aloc_location + (int)sizeof(struct FreeHeader));
+	return memset(clear_space, 0, g_slabSize);
+
+}
+
+static void * nf_alloc(int size){
+
+	int request_size = size;
+	int first_loop = 0;
+	int prior_head_node_found = 0;
+	int size_allocated = 0;
+
+	/*following temp headers are char * to do byte arithemetic*/
+	char * split_loc = NULL;
+	char * h_begin = NULL;
+	char * mem_begin = NULL;
+
+	/*last_location static to keep location between instantiations*/
+	static struct FreeHeader * last_location;
+
+	/*rover pointer that will search for a free block*/
+	/*and pointer to free block that always preceeds it*/
+	struct FreeHeader * previous = NULL;
+	struct FreeHeader * self_catch = NULL;
+
+	struct FreeHeader * split = NULL;
+	struct FreeHeader * head_looper = NULL;
+
+	//header used to return the address
+	struct AllocatedHeader * ret = NULL;
+
+	/*variables for space calculations & predictions*/
+	int leftover = 0;
+	int space = 0;
+
+	//kick start the searching procedure. On very first
+	//run, start search from top of free list head
+	//and all subsequent searches will start
+	//from node in front of last allocated
+	if(nf_once == 0)
+	{
+		last_location = nf_head_l;
+		nf_once++;
+	}
+
+	if(freed_after_empty == 1)
+	{
+		last_location = nf_head_l;
+		freed_after_empty = 0;
+	}
+		
+	self_catch = NULL;
+
+	previous = last_location;
+
+	//idea is to loop until you end up back where you started
+	//self_catch will be NULL, then after entering the loop
+	//it will grab the address of the free block following the last
+	//allocated block (last_location)
+
+	/*search through memory to find unallocated block using next fit*/
+	/*allocate if possible*/
+	while((last_location != self_catch) && (nf_head_l != NULL))
+	{
+		if(first_loop == 0)
+		{
+			//set rover pointer to where last free location was
+			self_catch = last_location; 
+			//you only want self_catch to obtain last_location once per instantiation
+			first_loop++;
+		}
+
+		//premptively calculate possible memory that'd be left if we allocate here
+		leftover = (self_catch->length) - request_size;
+		//memory left after we'd allocate the header + request (aka the possible next split free block)
+		space = leftover - (int)sizeof(struct FreeHeader);
+		
+		//we will hit only free blocks on iterations, point is to find
+		//the adequate size
+		if((self_catch->length) >= request_size)//enough memory to meet just the request?
+		{
+			if(leftover > (int)sizeof(struct FreeHeader))//is freespace-request enough to fit header too?
+			{
+				if(space >= 4)//is remaining space enough for at least smallest request (4 bytes)
+				{
+					/**parameters for memory split sufficient**/
+             				while(space % 4 != 0) //round down left over memory to multiple of 4
+            				 {
+            					   space--;
+            				 }
+
+					//begin pointer arithmetic with starting location
+					h_begin = (char *)self_catch; //cast to char to byte arithmetic
+					//move into where the free mem is (past the header)
+					mem_begin = h_begin + (int)sizeof(struct FreeHeader); 
+					//give this current header exactly the request size in bytes
+					//we will now point to where a new header will go (to split & link)
+					split_loc = mem_begin + request_size;
+					//create the new header
+					split = (struct FreeHeader*)split_loc;
+					//denote the space left
+					split->length = space;
+					self_catch->length = request_size;
+					/*NOW LINK/CAST NODES APPROPRIATELY*/
+					//new free head points to what the now allocated head pointed to
+
+					/*SPECIAL CASE:: NODE ALLOCATING IS HEAD*/
+					if(self_catch == nf_head_l)
+					{
+						//if the now allocated node happened to 
+						//be the head node, shift the head node
+						//to the now free node
+						nf_head_l = split;
+	
+						//check if the original head pointed to itself
+						if(self_catch->next == self_catch)
+						{
+							//means it was the only node around, what a scrub
+							//new head will loop into itself too
+							/*this happens w/ all mallocs and no frees*/
+							nf_head_l->next = nf_head_l;
+						}
+						else
+						{
+							//means that the head node connects to another node
+							//MUST FIND THE NODE THAT LINKS BACK TO THIS
+							//HEADNODE THATS ABOUT TO DETACH
+							while(!prior_head_node_found)
+							{
+								head_looper = self_catch->next;
+
+								//check every node down the chain
+								//to find which connects back to head
+								if(head_looper->next == self_catch)
+								{
+									//found the node, break
+									prior_head_node_found = 1;
+								}
+							}
+							/*connect the nodes now appropriately*/
+							//new head gets old heads next
+							nf_head_l->next = self_catch->next;
+							//make the node that looped back to head
+							//loop back to updated head
+							head_looper->next = nf_head_l;
+
+							//going to start from the head again next
+							//iteration
+							last_location = nf_head_l; 
+						}
+
+					}
+					else
+					{
+					
+						/*CASE 2:: NODE ALLOCATING IS NOT HEAD*/
+						//THIS MEANS WE HAVE PASSED THE HEAD, MEANING 
+						//WE KNOW THIS CURRENT NODES PREVIOUS NODE, AND NEXT
+						split->next = self_catch->next;
+						previous->next = split;
+					}
+
+					//preserve where we left off
+					last_location = split;
+
+					//pop allocated out of the chain 
+					size_allocated = self_catch->length;
+					ret = (struct AllocatedHeader *)self_catch;
+					ret->length = size_allocated;
+					ret->magic = (void *)MAGIC;
+			
+					return ((char *)ret + sizeof(struct AllocatedHeader));
+										
+				}
+				//if chose to split, there wouldnt be enough mem for both
+				//head and adequate data, instead, give whatever remainder region
+				//exists back to the user, allocate, and relink the lists
+
+				/*CASE 1::WE ARE @ HEAD*/
+				if(self_catch == nf_head_l)
+				{
+				
+					/*HEAD IS THE ONLY NODE LEFT (IT LINKS BACK TO ITSELF)*/
+					/**MAKE THE LIST HEADER = NULL**/
+					if(self_catch->next == self_catch)
+					{
+						//pop allocated out of the chain 
+						size_allocated = self_catch->length;
+						ret = (struct AllocatedHeader *)self_catch;
+						ret->length = size_allocated;
+
+						//list now empty
+						nf_head_l = NULL;
+						freed_after_empty = 0;
+	
+						return ((char *)ret + sizeof(struct AllocatedHeader));
+					}
+					else
+					{
+						//means that the head node connects to another node
+						//MUST FIND THE NODE THAT LINKS BACK TO THIS
+						//HEADNODE THATS ABOUT TO DETACH
+						
+						//also, the node ahead of head thats popping off 
+						//becomes the new head node		
+						nf_head_l = self_catch->next;
+
+						while(!prior_head_node_found)
+						{
+							head_looper = self_catch->next;
+
+							//check every node down the chain
+							//to find which connects back to head
+							if(head_looper->next == self_catch)
+							{
+								//found the node, break
+								prior_head_node_found = 1;
+							}
+						}
+		
+						/*connect the nodes now appropriately*/
+						head_looper->next = nf_head_l;
+
+						//going to start from the head again next
+						//iteration
+						last_location = nf_head_l; 
+
+						//pop allocated out of the chain 
+						size_allocated = self_catch->length;
+						ret = (struct AllocatedHeader *)self_catch;
+						ret->length = size_allocated;
+						ret->magic = (void *)MAGIC;
+
+						return ((char *)ret + sizeof(struct AllocatedHeader));
+					}
+				}
+				else
+				{
+					/*CASE 2:: NODE ALLOCATING IS NOT HEAD*/
+					//THIS MEANS WE HAVE PASSED THE HEAD, MEANING 
+					//WE KNOW THIS CURRENT NODES PREVIOUS NODE, AND NEXT
+					previous->next = self_catch->next;
+				}
+
+				//preserve where we left off
+				last_location = self_catch->next;
+
+				//pop allocated out of the chain 
+				size_allocated = self_catch->length;
+				ret = (struct AllocatedHeader *)self_catch;
+				ret->length = size_allocated;
+				ret->magic = (void *)MAGIC;
+			
+				return ((char *)ret + sizeof(struct AllocatedHeader));
+
+			}
+			//if chose to split, there wouldnt be enough mem for both
+			//head and adequate data, instead, give whatever remainder region
+			//exists back to the user, allocate, and relink the lists
+
+			/*CASE 1::WE ARE @ HEAD*/
+			if(self_catch == nf_head_l)
+			{
+			
+				/*HEAD IS THE ONLY NODE LEFT (IT LINKS BACK TO ITSELF)*/
+				/**MAKE THE LIST HEADER = NULL**/
+				if(self_catch->next == self_catch)
+				{
+					//pop allocated out of the chain 
+					size_allocated = self_catch->length;
+					ret = (struct AllocatedHeader *)self_catch;
+					ret->length = size_allocated;
+
+					//list now empty
+					nf_head_l = NULL;
+					freed_after_empty = 0;
+
+					return ((char *)ret + sizeof(struct AllocatedHeader));
+				}
+				else
+				{
+					//means that the head node connects to another node
+					//MUST FIND THE NODE THAT LINKS BACK TO THIS
+					//HEADNODE THATS ABOUT TO DETACH
+					
+					//also, the node ahead of head thats popping off 
+					//becomes the new head node		
+					nf_head_l = self_catch->next;
+					while(!prior_head_node_found)
+					{
+						head_looper = self_catch->next;
+
+						//check every node down the chain
+						//to find which connects back to head
+						if(head_looper->next == self_catch)
+						{
+							//found the node, break
+							prior_head_node_found = 1;
+						}
+					}
+	
+					/*connect the nodes now appropriately*/
+					head_looper->next = nf_head_l;
+
+					//going to start from the head again next
+					//iteration
+					last_location = nf_head_l; 
+
+					//pop allocated out of the chain 
+					size_allocated = self_catch->length;
+					ret = (struct AllocatedHeader *)self_catch;
+					ret->length = size_allocated;
+					ret->magic = (void *)MAGIC;
+
+					return ((char *)ret + sizeof(struct AllocatedHeader));
+				}
+			}
+			else
+			{
+				/*CASE 2:: NODE ALLOCATING IS NOT HEAD*/
+				//THIS MEANS WE HAVE PASSED THE HEAD, MEANING 
+				//WE KNOW THIS CURRENT NODES PREVIOUS NODE, AND NEXT
+				previous->next = self_catch->next;
+			}
+
+			//preserve where we left off
+			last_location = self_catch->next;
+
+			//pop allocated out of the chain 
+			size_allocated = self_catch->length;
+			ret = (struct AllocatedHeader *)self_catch;
+			ret->length = size_allocated;
+			ret->magic = (void *)MAGIC;
+		
+			return ((char *)ret + sizeof(struct AllocatedHeader));
+		}
+		//block isn't big enough for our request
+		else
+		{
+			//capture previous free node
+			previous = self_catch;
+			//move self_catch onto the next node
+			self_catch = previous->next;
+			
+		}
+	}
+	//either no sufficient blocks found
+	//or mem available to begin with
+	return NULL;
+}
+			
+int Mem_Free(void *ptr)
+{
+  // Grab that lock away from the other threads
+ // pthread_mutex_lock(&free_lock);	
+
+  ptr -= sizeof(struct AllocatedHeader);
+
+  if ( ptr == NULL )
+  {
+	// Let it go..
+	//pthread_mutex_unlock(&free_lock);	
+  
+  	return 0;		/* Check if ptr parameter is NULL,
+  				 * and simply return */
+  }
+
+  // It is an error (segmentation fault) to attempt a free outside 
+  // of the originally allocated Mem_Init region
+  if ( (ptr < slab_head) || (ptr > EOL) ) 
+  {
+	fprintf(stdout, "SEGFAULT\n");
+	
+	// Let it go..
+	//pthread_mutex_unlock(&free_lock);	
+	
+	return -1;
+  }
+
+  // The pointer refers to a block within the next fit region
+  if ( ptr >= nf_head )
+  {
+
+	//ptr = (struct AllocatedHeader*)ptr;
+  	
+        // Check if the specified block is allocated
+        if ( (((struct AllocatedHeader*)ptr)->magic) == (void*)MAGIC )
+        {
+		return nf_free(ptr);
+	
+	// Trying to free an unallocated block results in error
+        } else {
+
+  		// Let it go..
+  		//pthread_mutex_unlock(&free_lock);	
+		
+		return -1;
+	}
+  
+  // The pointer refers to a block within the slab region
+  } else {
+
+	//ptr = (struct FreeHeader*) ptr;
+
+	// Check if the specified block is a valid slab	
+  	if ( (((struct FreeHeader*)ptr)->length) == g_slabSize )
+	{
+		return slab_free((struct FreeHeader*)ptr);
+
+	// Trying to free an invalid slab results in error
+	} else {
+		
+  		// Let it go..
+  		//pthread_mutex_unlock(&free_lock);	
+		
+		return -1;
+	}
+  }
+
+///////////////////////// START OF THE CS354 STUFF //////////////////////////////
+
+}
+ 
+static int slab_free(void * ptr){
+
+  /* Local variables */
+  struct FreeHeader* curr = NULL;	/* Variable pointers to block_headers */
+  struct FreeHeader* prev = NULL;
+  struct FreeHeader* next = NULL;
+
+  /* Initialize variable pointers to block_headers */
+
+  curr = slab_head_l;
+  
+ // ptr = (char *)ptr - sizeof(struct AllocatedHeader);
+  /* Slab insertion into the free list below */
+ 
+  // If the free list is empty, make the specified pointer the
+  // head of the free list and return
+  if (curr == NULL) {
+	slab_head_l = (struct FreeHeader *)ptr;
+	slab_head_l->next = NULL;
+
+
+	// Let it go..
+	//pthread_mutex_unlock(&free_lock);	
+	
+	return 0;
+  }
+  // Traverse the free list to determine where the newly freed slab belongs
+  while ( curr < (struct FreeHeader*)ptr )
+  {
+  	prev = curr;
+	curr = next;
+	
+	// If the freed slab is at the end of the list, append it
+	if (curr == NULL) {
+		curr->next = (struct FreeHeader *)ptr;
+		((struct FreeHeader *)ptr)->next = NULL;
+			
+  		// Let it go..
+  		//pthread_mutex_unlock(&free_lock);	
+		
+		return 0;
+	}
+  }
+  
+  if ( (struct FreeHeader *)ptr < slab_head_l ) {
+		
+	// Set the next open block
+	((struct FreeHeader *)ptr)->next = curr;
+
+	// Set the length of the free block
+	((struct FreeHeader *)ptr)->length = g_slabSize;
+
+	// Update the head of the free list
+	slab_head_l = (struct FreeHeader *)ptr;
+
+  } else {
+
+	// Link the slab into the free list
+	prev->next = (struct FreeHeader *)ptr;
+	((struct FreeHeader *)ptr)->next = curr;
+	
+	// Set the slabs length (not really needed)
+	((struct FreeHeader *)ptr)->length = g_slabSize;
+  }
+  
+  // Let it go..
+  //pthread_mutex_unlock(&free_lock);	
+  
+  return 0;
+
+} // End of slab_free
+
+static int nf_free(void * ptr){
+
+  /* Local variables */
+  struct FreeHeader* curr = NULL;	/* Variable pointers to block_headers */
+  struct FreeHeader* next = NULL;
+  struct FreeHeader* prev = NULL;
+
+  struct FreeHeader* list_end = NULL;
+  struct FreeHeader* list_end_next = NULL;
+
+  int one_block;			/* Variable used for circular buffer
+  					   cycle detection with one free block */
+
+  int add_length;			/* Integer variable for determing 
+  					   size of block to be coalesced */
+  
+  int ptr_length;			/* Integer variable for holding the
+  					   length of the newly freed block */
+
+  char* nextPtr;			/* Arithmetic pointer */
+
+  /* Initialize variable pointers to block_headers */
+ 
+  one_block = 0;
+
+  curr = nf_head_l;
+
+  //***POST TURN IN FIX
+  //IF EMPTY LIST, TRYING TO REFERENCE NEXT FIELD OF NULL
+  //---->SEG FAULT!! CHECK THAT NOT NULL!
+  if(curr != NULL)
+  {
+  	next = curr->next;
+  }
+
+  ptr_length = ((struct AllocatedHeader *)ptr)->length;
+
+  // Traverse the free list to get the 'end' of the circular queue.
+  // That is, find the block that precededs the head of the free list
+  // so that its next field may be updated to the new free list head
+  
+  if ( curr == NULL )
+  {
+  	// Make the ptr the new head of the free list if the free
+	// list was empty, and loop it back to itself
+	((struct FreeHeader *)ptr)->length = ptr_length;
+	((struct FreeHeader *)ptr)->next = ((struct FreeHeader *)ptr);
+	nf_head_l = ((struct FreeHeader *)ptr);
+
+	// Set a flag for the allocation code
+	freed_after_empty = 1;
+	
+	// Let it go..
+	//pthread_mutex_unlock(&free_lock);	
+	
+	// Return success
+	return 0;
+  }
+
+  list_end = nf_head_l;
+
+  //**POST TURN IN FIX
+  //THREADS HANG UP CAUSE AT SOMEPOINT 
+  //A FREE OCCURS ON AN EMPTY LIST
+  //ORIG TRIED TO DEREFERENCE NULL POINTER->SEGFAULT
+  if(list_end != NULL)
+  {
+  	list_end_next = list_end->next;
+  }
+
+  while ((list_end != NULL) && (list_end_next != nf_head_l) )
+  {
+	list_end = list_end_next;
+	list_end_next = list_end->next;
+  }
+
+  /* Coalescing code below */ 
+  if ( (struct FreeHeader *)ptr < curr ) {
+	
+	// Pointer arithmetic swag
+	nextPtr = (char*) ptr + ptr_length + (int)sizeof(struct FreeHeader);
+
+	// If the freed block can be coalesced with the head of the free list
+	if ( nextPtr == (char*) curr )
+	{	
+		// Set the next open block
+		((struct FreeHeader *)ptr)->next = next;
+
+		// Set the length of the free block
+		add_length = (curr->length + (int)sizeof(struct FreeHeader));
+		((struct FreeHeader *)ptr)->length = add_length + ptr_length;
+
+		// Update loopback of circular queue
+		list_end->next = (struct FreeHeader*)ptr;
+		
+	} else {
+		
+		// Set the next open block
+		((struct FreeHeader *)ptr)->next = curr;
+
+		// Set the length of the free block
+		((struct FreeHeader *)ptr)->length = ptr_length;
+
+		// Update loopback of circular queue
+		list_end->next = (struct FreeHeader *)ptr;
+	}
+
+	// Update the head of the free list
+	nf_head_l = (struct FreeHeader *)ptr;
+
+  } else {
+
+	// Traverse the free list to determine where the newly freed
+	// block will be placed. Coalescing will occur if the specified
+	// block neighbors another free block
+	while ( curr < (struct FreeHeader*)ptr )
+	{
+	  	prev = curr;
+		curr = next;
+
+		// If there is only one open block in the free list
+		// that points back to itself, break to avoid an
+		// infinite loop and set the cycle check variable
+		if (prev == curr)
+		{
+			one_block = 1;
+			break;
+		}
+	}
+
+	// If there is one free block left in the free list that
+	// is found at a smaller address than the specified pointer
+	if ( one_block == 1 )
+	{	
+		// Pointer arithmetic swag
+		nextPtr = (char*) prev + prev->length + (int)sizeof(struct FreeHeader);
+
+		// Check for prev block coalescing
+		if ( nextPtr == (char*)ptr )
+		{
+			// Set the length of the free block
+			add_length = (ptr_length + (int)sizeof(struct FreeHeader));
+			prev->length += add_length;
+
+			// No need to update the next pointer
+			
+		} else {
+			
+			// Update loopback of circular queue
+			((struct FreeHeader *)ptr)->next = prev;
+
+			// Set the next open block
+			prev->next = (struct FreeHeader *)ptr;
+		} 
+
+	// There are multiple free blocks within the free list
+	} else {
+
+		// Pointer arithmetic swag
+		nextPtr = (char*) ptr + ptr_length + (int)sizeof(struct FreeHeader);
+
+		// Check for next block coalescing
+		if ( nextPtr == (char*)curr )
+		{	
+			// Set the next open block
+			((struct FreeHeader *)ptr)->next = next;
+
+			// Set the length of the free block
+			add_length = (curr->length + (int)sizeof(struct FreeHeader));
+			((struct FreeHeader *)ptr)->length += add_length;
+		
+		} else {
+			
+			// Set the next open block
+			((struct FreeHeader *)ptr)->next = curr;
+
+			// Set the free block's length
+			((struct FreeHeader *)ptr)->length = ptr_length;
+		}
+		
+		// Pointer arithmetic swag
+		nextPtr = (char*) prev + prev->length + (int)sizeof(struct FreeHeader);
+
+		// Check for prev block coalescing
+		if ( nextPtr == (char*)ptr )
+		{
+			// Set the length of the free block
+			add_length = (ptr_length + (int)sizeof(struct FreeHeader));
+			prev->length += add_length;
+			ptr_length = ((struct FreeHeader *)ptr)->length;
+
+			// Update the pointer for further coalescing
+			prev->next = ((struct FreeHeader *)ptr)->next;
+			
+		} else {
+			
+			// Set the next open block
+			prev->next = (struct FreeHeader *)ptr;
+		} 
+		
+	}
+  }  
+
+  // Let it go..
+  //pthread_mutex_unlock(&free_lock);	
+  
+  // Return success
+  return 0;
+
+} // End of nf_free
+			
+
+#define MAX 100
+
+char* buffer[MAX];
+int fill = 0;
+int use = 0;
+int count = 0;
+int loops = 1000;
+
+void put(char *ptr)
+{
+	buffer[fill] = ptr;
+	fill = (fill + 1) % MAX;
+	count++;
+}
+
+char* get()
+{
+	char* tmp = buffer[use];
+	use = (use + 1) % MAX;
+	count--;
+	return tmp;
+}
+
+pthread_cond_t *empty, *full;
+pthread_mutex_t *mutex;
+
+void* producer(void *arg)
+{
+	int i;
+	char *nfPtr = NULL;
+	for(i=0; i<loops; i++)
+	{
+		nfPtr = NULL;
+		nfPtr = Mem_Alloc(32);
+		pthread_mutex_lock(mutex);
+		while (count == MAX)
+			pthread_cond_wait(empty, mutex);
+		assert(nfPtr != NULL);
+		put(nfPtr);
+		pthread_cond_signal(full);
+		pthread_mutex_unlock(mutex);
+	}
+	return NULL;
+}
+
+void* consumer(void *arg)
+{
+	int i;
+	char *nfPtr = NULL;
+	for(i=0; i<loops; i++)
+	{
+		pthread_mutex_lock(mutex);
+		while (count == 0)
+			pthread_cond_wait(full, mutex);
+		nfPtr = get();
+		assert(Mem_Free(nfPtr) == 0);
+		pthread_cond_signal(empty);
+		pthread_mutex_unlock(mutex);
+	}
+	return NULL;
+}
+
+
+void initSync()
+{
+	mutex = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+	empty = (pthread_cond_t *) malloc (sizeof (pthread_cond_t));
+	full = (pthread_cond_t *) malloc (sizeof (pthread_cond_t));
+
+	pthread_mutex_init (mutex, NULL);	
+	pthread_cond_init (full, NULL);
+	pthread_cond_init (empty, NULL);
+}
+
+
+int main()
+{
+	assert(Mem_Init(8192,64) != NULL);
+
+	initSync();
+
+	pthread_t p1,p2,c1,c2;
+
+	pthread_create(&p1, NULL, producer, NULL);
+	pthread_create(&p2, NULL, producer, NULL);
+	pthread_create(&c1, NULL, consumer, NULL);
+	pthread_create(&c2, NULL, consumer, NULL);
+	
+	pthread_join(p1, NULL);
+	pthread_join(p2, NULL);
+	pthread_join(c1, NULL);
+	pthread_join(c2, NULL);
+
+	return 0;	
+}

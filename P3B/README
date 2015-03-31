@@ -1,0 +1,41 @@
+ALL of A is done. Its an easy implementation:
+
+p.A::
+
+firstly, we want to induce the first unallocated page, so in exec.c, the first address that you start with to create a page 
+is changed to 4096. Aka, sz = 4096.
+
+secondly, in user/makefile, change the entry point to x1000 (this is corresponding byte address to 4096)
+
+lastly, in kernel/vm.c, change the copyuvm function to begin copying the pte's from 4096...aka i = 4096 in the for loop. THIS IS JUST FOR PART A.
+
+Part B gets a little more in depth. I left notes in the code. Each large change is denoted by a note and are numbered chronologically.
+
+in /kernel, in bash type 'grep MOD *'
+
+a list of all the files where MOD is should pop up, all changed code for part B is denoted by /****... MOD.x ***/ where x is the number
+corresponding to which change. These changes were done in order, so simply trace my changes from 1 to 9. if you have questions call me. Ill
+be sleeping in the morning but just call a bunch to wake me up if you are uber confused on anything.
+
+what you have to do:::
+
+when you get to understanding MOD.6 in syscall.c, in bash do 'grep sz *' in the kernel directory
+
+in exec.c, you'll see the variable proc->sz has a slightly different context now that the blocks are all moved around. A lot of the O.G. code
+though has a lot of bounds checking that uses 'sz' with the assumption that code/stack/heap are all contiguous in that order. 
+MOD.6 takes care of one functions corrected bounds check. You need to do the same for the other syscall.c functions that i didn't change yet
+and basically fix the code wherever the code assumes sz still refers to the original layout. BE CAREFUL THOUGH, in some places, 
+**outside** of syscall.c, the unchanged use of proc->sz was intentional; im pretty sure this only is in sbrk and growproc. theres notes there.
+
+aside from that, the code should be done. *********************HOWEVER****************************
+
+running the code will result in an infinite loop. Right now i have print statements in both COPYUVM and in Fork. You will see that it infinitely loops. This is your job to fix.
+check piazza posts on why it might have happened. **********************Use GDB with xv6. If you dont know how to use it, check piazza, theres a video showing how. I had trouble getting
+it working though. If you do too, make a piazza post to see how to get it to work. Text me if gdb works for you. Basically as far as the code is concerned, the program gets stuck in a loop
+of continuous forks...this likely has to do with some incorrect math somewhere or incorrectly thought out blocks/etc It could also be due to some wierd bounds conditions with that sz variable.
+
+if you waste too much time trying to fix this and going down a deep rabbit hole...over two hours or so, i'd suggest starting clean again. Do part A, check that it works (you can copy the null.c in /user...make sure user/makefile.mk also is update with null.c so it compiles). If it works, null.c should crash/kill the program. Then incrementally implement the changes I did, but do it so you you know exactly what you are changing and do it so you can see exactly what 
+was changed so theres no ambient stupid bugs due to mistype or random vars. BUT seriously, try and avoid this approach, ideally get GDB to work and step through the program to see where its going wrong it will save you a lot of time figuring out whats going on. With GDB, you'd step through the program and basically break point at where it loops, then use GDB commands (that you can google) to view memory locations, 
+and more importantly the proc struct parameters during run time. You basically want to track down whats causing this loop. 
+
+its 6 am now and i'm tired as nutsack, i leave the rest to you my son
