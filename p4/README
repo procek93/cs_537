@@ -1,0 +1,8 @@
+Name: Peter Procek
+CSL-ID: procek
+Name: Graham Nygard
+CSL-ID: nygard
+
+Implementation Details:
+
+This xv6 kernal is now capable of spawning threads and utilizing mutex locks and condition variables. The system calls clone and join are used via the user library calls thread_create and thread_join, and are responsible for creating new threads for exectution and joining them back to the parent process once they have completed their executioin. The system calls dealing with the condition variables and the acquisition of the mutex locks are used to protect the pesky threads from interfering with one another.
