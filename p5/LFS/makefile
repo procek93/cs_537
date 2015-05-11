@@ -12,7 +12,7 @@
 ################################################################################
 
 # SPECIFIED TARGETS
-all: fsck
+all: fsck lfsreader
 
 # COMPILE fsck
 fsck: fsck.c
