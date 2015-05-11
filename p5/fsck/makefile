@@ -24,3 +24,4 @@ fsck: fsck.c
 
 clean:
 	rm -f myfsck 
+	rm -f test

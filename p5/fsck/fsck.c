@@ -1,26 +1,22 @@
 #include <stdio.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
-#include <assert.h>
-#include <dirent.h>
 #include <stdbool.h>
-
-#define stat xv6_stat  // avoid clash with host struct stat
-#define dirent xv6_dirent  // avoid clash with host struct stat
+/*
 #include "fs.h"
+#include "stat.h"
+#include "types.h"
+*/
+#define stat xv6_stat  // avoid clash with host struct stat
+#include "types.h"
+#include "fs.h"
+#include "stat.h"
 #undef stat
-#undef dirent
 
 #define BLOCK_SIZE (512)
 #define END_OF_FILE 0
-
-//int nblocks = 995;
-//int ninodes = 200;
-//int size = 1024;
 
 int numInodes;
 int numDBlock;
@@ -28,7 +24,11 @@ int numDBlock;
 int fsfd;
 struct superblock sb;
 struct dinode inode;
-struct dirent* directory;
+struct stat fileStat;
+
+struct dinode inodes[200];
+uint linkCount[200];
+
 
 char zeroes[512];
 uint freeblock;
@@ -36,11 +36,6 @@ uint usedblocks;
 uint bitblocks;
 uint freeinode = 1;
 uint root_inode;
-
-//dinode dirInodes[200];
-//dinode fileInodes[200];
-
-struct stat fileStat;
 
 int
 main(int argc, char *argv[])
@@ -56,8 +51,6 @@ main(int argc, char *argv[])
 	printf("Error!\n");
 	exit(1);
     }
-
-    //printf("Bout to stat dat file!\n");
     
     /* Generates a stat file descriptor specifying the address of 
      * the fileStat structure for struct field access */
@@ -67,6 +60,14 @@ main(int argc, char *argv[])
     int numBytes = fileStat.st_size;
     int numBlock = numBytes / BLOCK_SIZE;
 
+
+    // CHECK THE SUPERBLOCK. THE SUPERBLOCK SHOULD HAVE CONSISTENT SIZE,
+    // INODE NUMBER, AND DATA BLOCK NUMBER FIELDS. IF THESE FIELDS ARE
+    // INCONSISTENT, DETERMINE WHETHER OR NOT THEY MAY BE FIXED SO THAT
+    // THEY ARE CONSISTENT. FOR EXAMPLE, IF THE SIZE OF THE FILE SYSTEM
+    // IS CORRUPTED, TRY TO RECONSTRUCT AN ACCURATE SIZE FROM THE NUMBER
+    // OF INODES AND DATA BLOCKS, AFTER VERIFYING THAT THESE NUMBERS ARE
+    // BELIEVABLE.
     lseek(fsfd, BLOCK_SIZE, SEEK_SET);
 
     if ( read(fsfd, &sb, sizeof(struct superblock)) > 0 ) {
@@ -133,47 +134,85 @@ main(int argc, char *argv[])
 
     }
 
-    // Check the inodes
+    // CHECK THE INODES. THE INODE REGION STARTS AT THE 3 BLOCK OF
+    // THE DISK. FOR EACH OF THE INODES IN THIS REGION, CHECK TO
+    // SEE WHETEHR OR NOT ITS DATA IS CORRUPTED. CHECKS CURRENTLY
+    // IN PLACE INCLUDE '.' AND '..' DIRECTORY ENTRY VERIFICATION
+    // AND VALID TYPE VERIFICATION.
     lseek(fsfd, 2*BLOCK_SIZE, SEEK_SET);
  
-    //dirent* dataAddress;
-
+    int clearInode = 0;
+    
     int i;
-    for (i = 0 ; i < 13 /*numInodes*/ ; i++)
+    for (i = 0 ; i < numInodes ; i++)
     {
 	    if( read(fsfd, &inode, sizeof(struct dinode)) > 0 ) {
+
+		inodes[i] = inode;	
 
 		fprintf(stdout, "\nReading inode: %d\n", i);
 
 		short type = inode.type;
-		directory = (struct dirent*)(inode.addrs[0]*BLOCK_SIZE);
+		struct dirent directory;
 
-		if ( (type != (ushort)0) || (type != (ushort)1) || (type != (ushort)2) || (type != (ushort)3) ) {
-			printf("Error! Invalid type!\n");
-		 	exit(1);	
-		} 
-		
-		else if ( type == (ushort)1 ) {
-			
-//			lseek(fsfd, dataAddress, SEEK_SET);
+		if ( type == T_DIR )
+		{		
+			printf("Inode %d data block address %x\n", i, BLOCK_SIZE*inode.addrs[0]);
 
-//			if ( read(fsfd, &directory, sizeof(struct dirent)) > 0) {
-/*
-			printf("Name: %c\n", directory.name[0]);
-
-				if (strcmp(directory.name[0], ".") != 0)
+			lseek(fsfd, BLOCK_SIZE*inode.addrs[0], SEEK_SET);
+			if (read(fsfd, &directory, sizeof(struct dirent)) > 0)
+			{	
+				printf("First directory entry: %s\n", directory.name);
+				
+				if (strcmp(directory.name, ".") != 0)
 				{
-					printf("Error!\n");
-					exit(1);
+					clearInode = 1;
+				}
+			}
 
-				} else if (strcmp(directory.name[1], "..") != 0)
+			lseek(fsfd, 0, SEEK_CUR);
+			if (read(fsfd, &directory, sizeof(struct dirent)) > 0)
+			{
+				printf("Second directory entry: %s\n", directory.name);
+				if (strcmp(directory.name, "..") != 0)
 				{
-					printf("Error!\n");
+					clearInode = 1;
+				}
+			}
+
+			if (clearInode)
+			{
+				bzero(&inode, sizeof(struct dinode));
+				lseek(fsfd, 2*BLOCK_SIZE + (i)*sizeof(struct dinode), SEEK_SET);
+
+				if ( write(fsfd, &inode, sizeof(struct dinode)) != sizeof(struct dinode) )
+				{
+					printf("Error! Write failed miserably!\n");
 					exit(1);
 				}
-				*/
-				printf("Read some shyte\n");
-		//	}
+			}
+		
+		} else if ( type == T_FILE )
+		{
+		
+		
+		} else if ( type == T_DEV ) 
+		{
+
+
+		} else if ( type == T_FREE )
+		{
+
+		} else
+		{	
+			bzero(&inode, sizeof(struct dinode));
+			lseek(fsfd, 2*BLOCK_SIZE + (i)*sizeof(struct dinode), SEEK_SET);
+
+			if ( write(fsfd, &inode, sizeof(struct dinode)) != sizeof(struct dinode) )
+			{
+				printf("Error! Write failed miserably!\n");
+				exit(1);
+			}
 		}
 
 		fprintf(stdout, "inode type: %u\n", inode.type);
@@ -188,7 +227,7 @@ main(int argc, char *argv[])
 		}
 
 	   }
-	   lseek(fsfd, 0, SEEK_CUR);
+	   lseek(fsfd, 2*BLOCK_SIZE + (i+1)*sizeof(struct dinode), SEEK_SET);
     }
 
     lseek(fsfd, 28*BLOCK_SIZE, SEEK_SET);
@@ -224,6 +263,6 @@ main(int argc, char *argv[])
     }
     
 
-
+return 1;
 
 }
