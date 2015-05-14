@@ -1,0 +1,10 @@
+Name: Peter Procek
+CSL-ID: procek
+Name: Graham Nygard
+CSL-ID: nygard
+
+Implementation Details:
+
+Our implementation of fsck uses simple recursion to correct any inconsistencies within a file system. Initial checks of the superblock are conducted to ensure the integrity of the file system, and corrections are made to faulty fields by utilizing the fstat function. After the superblock is thoroughly reviewed, the data block bitmap is enumerated before delving into checks of the file system inodes. Sanity checks are performed on the link counts, sizes, and data pointed to by each inode. If any corruption is detected within the inode, the inode is erased and all references to it are wiped from the file system.
+
+Our implementation of the lfsreader simply traverses an LFS file system by following the yellow brick road of inode references. Each of these references is contained within the overall inodeMap, which is immediately saved into a struct for easy access later in the tree traversal. Depending on whether or not the sought after pathname points to a directory or a file, the 'ls' or 'cat' command will be invoked on directories and files respectively. Errors checks have been used for trying to invoke commands on incompatible inode types.
