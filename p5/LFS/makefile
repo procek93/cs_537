@@ -12,15 +12,16 @@
 ################################################################################
 
 # SPECIFIED TARGETS
-all: fsck lfsreader
+all: lfsreader
 
 # COMPILE fsck
-fsck: fsck.c
-	gcc -o myfsck fsck.c -Werror
+fsck: lfsreader.c
+	gcc -o lfsreader lfsreader.c -Werror
 
 # COMPILE lfsreader
 #lfsreader: lfsreader.c
 #	gcc -o lfsreader lfsreader.c -Werror
 
 clean:
-	rm -f myfsck 
+	rm -f lfsreader
+	rm -f test

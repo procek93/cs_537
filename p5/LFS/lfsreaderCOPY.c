@@ -110,6 +110,7 @@ main(int argc, char *argv[])
     } else 
     {
 	printf("Error!\n");
+	exit(1);
     }
     
     return 0;
