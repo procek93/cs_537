@@ -1,0 +1,1231 @@
+./include/fs.h:// On-disk file system format.
+./include/fs.h:#define ROOTINO 1  // root i-number
+./include/fs.h:// On-disk inode structure
+./include/param.h:#define KSTACKSIZE 4096  // size of per-process kernel stack
+./include/param.h:#define NINODE       50  // maximum number of active i-nodes
+./include/param.h~:#define KSTACKSIZE 4096  // size of per-process kernel stack
+./include/param.h~:#define NINODE       50  // maximum number of active i-nodes
+./include/traps.h:// Processor-defined:
+./include/traps.h:#define T_NMI            2      // non-maskable interrupt
+./include/x86.h:  pd[0] = size-1;
+./include/x86.h:  pd[0] = size-1;
+./include/x86.h:  // The + in "+m" denotes a read-modify-write operand.
+./kernel/asm.h:// The 0xC0 means the limit is in 4096-byte units
+./kernel/asm.h:// and (for executable segments) 32-bit mode.
+./kernel/asm.h:#define STA_E     0x4       // Expand down (non-executable segments)
+./kernel/asm.h:#define STA_W     0x2       // Writeable (non-executable segments)
+./kernel/bio.c:    b->next = bcache.head.next;
+./kernel/bio.c:    b->prev = &bcache.head;
+./kernel/bio.c:    b->dev = -1;
+./kernel/bio.c:    bcache.head.next->prev = b;
+./kernel/bio.c:  for(b = bcache.head.next; b != &bcache.head; b = b->next){
+./kernel/bio.c:    if(b->dev == dev && b->sector == sector){
+./kernel/bio.c:      if(!(b->flags & B_BUSY)){
+./kernel/bio.c:        b->flags |= B_BUSY;
+./kernel/bio.c:  for(b = bcache.head.prev; b != &bcache.head; b = b->prev){
+./kernel/bio.c:    if((b->flags & B_BUSY) == 0){
+./kernel/bio.c:      b->dev = dev;
+./kernel/bio.c:      b->sector = sector;
+./kernel/bio.c:      b->flags = B_BUSY;
+./kernel/bio.c:  if(!(b->flags & B_VALID))
+./kernel/bio.c:  if((b->flags & B_BUSY) == 0)
+./kernel/bio.c:  b->flags |= B_DIRTY;
+./kernel/bio.c:  if((b->flags & B_BUSY) == 0)
+./kernel/bio.c:  b->next->prev = b->prev;
+./kernel/bio.c:  b->prev->next = b->next;
+./kernel/bio.c:  b->next = bcache.head.next;
+./kernel/bio.c:  b->prev = &bcache.head;
+./kernel/bio.c:  bcache.head.next->prev = b;
+./kernel/bio.c:  b->flags &= ~B_BUSY;
+./kernel/bootasm.S:# Start the first CPU: switch to 32-bit protected mode, jump into C.
+./kernel/bootasm.S:.code16                       # Assemble for 16-bit mode
+./kernel/bootasm.S:  movw    %ax,%ds             # -> Data Segment
+./kernel/bootasm.S:  movw    %ax,%es             # -> Extra Segment
+./kernel/bootasm.S:  movw    %ax,%ss             # -> Stack Segment
+./kernel/bootasm.S:  movb    $0xd1,%al               # 0xd1 -> port 0x64
+./kernel/bootasm.S:  movb    $0xdf,%al               # 0xdf -> port 0x60
+./kernel/bootasm.S:  # Complete transition to 32-bit protected mode by using long jmp
+./kernel/bootasm.S:.code32  # Tell assembler to generate 32-bit code now.
+./kernel/bootasm.S:  # Set up the protected-mode data segment registers
+./kernel/bootasm.S:  movw    %ax, %ds                # -> DS: Data Segment
+./kernel/bootasm.S:  movw    %ax, %es                # -> ES: Extra Segment
+./kernel/bootasm.S:  movw    %ax, %ss                # -> SS: Stack Segment
+./kernel/bootasm.S:  movw    %ax, %fs                # -> FS
+./kernel/bootasm.S:  movw    %ax, %gs                # -> GS
+./kernel/bootasm.S:  movw    $0x8a00, %ax            # 0x8a00 -> port 0x8a00
+./kernel/bootasm.S:  movw    $0x8ae0, %ax            # 0x8ae0 -> port 0x8a00
+./kernel/bootasm.S:  .word   (gdtdesc - gdt - 1)             # sizeof(gdt) - 1
+./kernel/bootmain.c:// bootasm.S has put the processor into protected 32-bit mode.
+./kernel/bootmain.c:  if(elf->magic != ELF_MAGIC)
+./kernel/bootmain.c:  ph = (struct proghdr*)((uchar*)elf + elf->phoff);
+./kernel/bootmain.c:  eph = ph + elf->phnum;
+./kernel/bootmain.c:    va = (uchar*)ph->va;
+./kernel/bootmain.c:    readseg(va, ph->filesz, ph->offset);
+./kernel/bootmain.c:    if(ph->memsz > ph->filesz)
+./kernel/bootmain.c:      stosb(va + ph->filesz, 0, ph->memsz - ph->filesz);
+./kernel/bootmain.c:  entry = (void(*)(void))(elf->entry);
+./kernel/bootmain.c:  outb(0x1F7, 0x20);  // cmd 0x20 - read sectors
+./kernel/bootmain.c:  va -= offset % SECTSIZE;
+./kernel/bootmain.c:  // We'd write more to memory than asked, but it doesn't matter --
+./kernel/bootother.S:# Each non-boot CPU ("AP") is started up in response to a STARTUP
+./kernel/bootother.S:# IPI from the boot CPU.  Section B.4.2 of the Multi-Processor
+./kernel/bootother.S:# set to XY00:0000, where XY is an 8-bit value sent with the
+./kernel/bootother.S:# STARTUP. Thus this code must start at a 4096-byte boundary.
+./kernel/bootother.S:# It puts the address of a newly allocated per-core stack in start-4,
+./kernel/bootother.S:# and the address of the place to jump to (mpmain) in start-8.
+./kernel/bootother.S:#   - it does not need to enable A20
+./kernel/bootother.S:#   - it uses the address at start-4 for the %esp
+./kernel/bootother.S:#   - it jumps to the address at start-8 instead of calling bootmain
+./kernel/bootother.S:  movl    start-4, %esp
+./kernel/bootother.S:  call	*(start-8)
+./kernel/bootother.S:  .word   (gdtdesc - gdt - 1)
+./kernel/console.c:    x = -xx;
+./kernel/console.c:    buf[i++] = '-';
+./kernel/console.c:  while(--i >= 0)
+./kernel/console.c:  cprintf("cpu%d: panic: ", cpu->id);
+./kernel/console.c:    pos += 80 - pos%80;
+./kernel/console.c:    if(pos > 0) --pos;
+./kernel/console.c:    pos -= 80;
+./kernel/console.c:    memset(crt+pos, 0, sizeof(crt[0])*(24*80 - pos));
+./kernel/console.c:#define C(x)  ((x)-'@')  // Control-x
+./kernel/console.c:            input.buf[(input.e-1) % INPUT_BUF] != '\n'){
+./kernel/console.c:        input.e--;
+./kernel/console.c:        input.e--;
+./kernel/console.c:      if(c != 0 && input.e-input.r < INPUT_BUF){
+./kernel/console.c:      if(proc->killed){
+./kernel/console.c:        return -1;
+./kernel/console.c:        // caller gets a 0-byte result.
+./kernel/console.c:        input.r--;
+./kernel/console.c:    --n;
+./kernel/console.c:  return target - n;
+./kernel/data.S:// Conventionally, Unix linkers provide pseudo-symbols
+./kernel/data.S:// read-only rodata section between text and data.
+./kernel/defs.h:// number of elements in fixed-size array
+./kernel/exec.c:    return -1;
+./kernel/exec.c:  proc->sz = sz;
+./kernel/exec.c:  proc->code_top = sz;
+./kernel/exec.c:  st = USERTOP - PGSIZE;
+./kernel/exec.c:  proc->stack_top = st;
+./kernel/exec.c:    sp -= strlen(argv[argc]) + 1;
+./kernel/exec.c:  ustack[0] = 0xffffffff;  // fake return PC  <--specific to xv6 (dummy frame pointer)
+./kernel/exec.c:   * popped return address, but xffffff... is not mapped to physical page (its -1) so you will page fault
+./kernel/exec.c:  ustack[2] = sp - (argc+1)*4;  // argv pointer
+./kernel/exec.c:  sp -= (3+argc+1) * 4;
+./kernel/exec.c:  safestrcpy(proc->name, last, sizeof(proc->name));
+./kernel/exec.c:  oldpgdir = proc->pgdir;
+./kernel/exec.c:  proc->pgdir = pgdir;
+./kernel/exec.c:  proc->tf->eip = elf.entry;  // main
+./kernel/exec.c:  proc->tf->esp = sp;
+./kernel/exec.c:  return -1;
+./kernel/file.c:    if(f->ref == 0){
+./kernel/file.c:      f->ref = 1;
+./kernel/file.c:  if(f->ref < 1)
+./kernel/file.c:  f->ref++;
+./kernel/file.c:  if(f->ref < 1)
+./kernel/file.c:  if(--f->ref > 0){
+./kernel/file.c:  f->ref = 0;
+./kernel/file.c:  f->type = FD_NONE;
+./kernel/file.c:  if(f->type == FD_INODE){
+./kernel/file.c:    ilock(f->ip);
+./kernel/file.c:    stati(f->ip, st);
+./kernel/file.c:    iunlock(f->ip);
+./kernel/file.c:  return -1;
+./kernel/file.c:  if(f->readable == 0)
+./kernel/file.c:    return -1;
+./kernel/file.c:  if(f->type == FD_PIPE)
+./kernel/file.c:    return piperead(f->pipe, addr, n);
+./kernel/file.c:  if(f->type == FD_INODE){
+./kernel/file.c:    ilock(f->ip);
+./kernel/file.c:    if((r = readi(f->ip, addr, f->off, n)) > 0)
+./kernel/file.c:      f->off += r;
+./kernel/file.c:    iunlock(f->ip);
+./kernel/file.c:  if(f->writable == 0)
+./kernel/file.c:    return -1;
+./kernel/file.c:  if(f->type == FD_PIPE)
+./kernel/file.c:    return pipewrite(f->pipe, addr, n);
+./kernel/file.c:  if(f->type == FD_INODE){
+./kernel/file.c:    ilock(f->ip);
+./kernel/file.c:    if((r = writei(f->ip, addr, f->off, n)) > 0)
+./kernel/file.c:      f->off += r;
+./kernel/file.c:    iunlock(f->ip);
+./kernel/file.h:// in-core file system types
+./kernel/fs.c:// Disk layout is: superblock, inodes, block in-use bitmap, data blocks.
+./kernel/fs.c:// This file contains the low-level file system manipulation 
+./kernel/fs.c:// routines.  The (higher-level) system call implementations
+./kernel/fs.c:  memmove(sb, bp->data, sizeof(*sb));
+./kernel/fs.c:  memset(bp->data, 0, BSIZE);
+./kernel/fs.c:      if((bp->data[bi/8] & m) == 0){  // Is block free?
+./kernel/fs.c:        bp->data[bi/8] |= m;  // Mark block in use on disk.
+./kernel/fs.c:  if((bp->data[bi/8] & m) == 0)
+./kernel/fs.c:  bp->data[bi/8] &= ~m;  // Mark block free on disk.
+./kernel/fs.c:// the superblock.  The kernel keeps a cache of the in-use
+./kernel/fs.c:// on-disk structures to provide a place for synchronizing access
+./kernel/fs.c:// ip->ref counts the number of pointer references to this cached
+./kernel/fs.c:// inode; references are typically kept in struct file and in proc->cwd.
+./kernel/fs.c:// When ip->ref falls to zero, the inode is no longer cached.
+./kernel/fs.c:// represented by the I_BUSY flag in the in-memory copy.
+./kernel/fs.c:// to create arbitrarily-sized atomic operations.
+./kernel/fs.c:// responsibility to lock them before using them.  A non-zero
+./kernel/fs.c:// ip->ref keeps these unlocked inodes in the cache.
+./kernel/fs.c:    dip = (struct dinode*)bp->data + inum%IPB;
+./kernel/fs.c:    if(dip->type == 0){  // a free inode
+./kernel/fs.c:      dip->type = type;
+./kernel/fs.c:  bp = bread(ip->dev, IBLOCK(ip->inum));
+./kernel/fs.c:  dip = (struct dinode*)bp->data + ip->inum%IPB;
+./kernel/fs.c:  dip->type = ip->type;
+./kernel/fs.c:  dip->major = ip->major;
+./kernel/fs.c:  dip->minor = ip->minor;
+./kernel/fs.c:  dip->nlink = ip->nlink;
+./kernel/fs.c:  dip->size = ip->size;
+./kernel/fs.c:  memmove(dip->addrs, ip->addrs, sizeof(ip->addrs));
+./kernel/fs.c:// and return the in-memory copy.
+./kernel/fs.c:    if(ip->ref > 0 && ip->dev == dev && ip->inum == inum){
+./kernel/fs.c:      ip->ref++;
+./kernel/fs.c:    if(empty == 0 && ip->ref == 0)    // Remember empty slot.
+./kernel/fs.c:  ip->dev = dev;
+./kernel/fs.c:  ip->inum = inum;
+./kernel/fs.c:  ip->ref = 1;
+./kernel/fs.c:  ip->flags = 0;
+./kernel/fs.c:  ip->ref++;
+./kernel/fs.c:  if(ip == 0 || ip->ref < 1)
+./kernel/fs.c:  while(ip->flags & I_BUSY)
+./kernel/fs.c:  ip->flags |= I_BUSY;
+./kernel/fs.c:  if(!(ip->flags & I_VALID)){
+./kernel/fs.c:    bp = bread(ip->dev, IBLOCK(ip->inum));
+./kernel/fs.c:    dip = (struct dinode*)bp->data + ip->inum%IPB;
+./kernel/fs.c:    ip->type = dip->type;
+./kernel/fs.c:    ip->major = dip->major;
+./kernel/fs.c:    ip->minor = dip->minor;
+./kernel/fs.c:    ip->nlink = dip->nlink;
+./kernel/fs.c:    ip->size = dip->size;
+./kernel/fs.c:    memmove(ip->addrs, dip->addrs, sizeof(ip->addrs));
+./kernel/fs.c:    ip->flags |= I_VALID;
+./kernel/fs.c:    if(ip->type == 0)
+./kernel/fs.c:  if(ip == 0 || !(ip->flags & I_BUSY) || ip->ref < 1)
+./kernel/fs.c:  ip->flags &= ~I_BUSY;
+./kernel/fs.c:  if(ip->ref == 1 && (ip->flags & I_VALID) && ip->nlink == 0){
+./kernel/fs.c:    if(ip->flags & I_BUSY)
+./kernel/fs.c:    ip->flags |= I_BUSY;
+./kernel/fs.c:    ip->type = 0;
+./kernel/fs.c:    ip->flags = 0;
+./kernel/fs.c:  ip->ref--;
+./kernel/fs.c:// are listed in ip->addrs[].  The next NINDIRECT blocks are 
+./kernel/fs.c:// listed in the block ip->addrs[NDIRECT].
+./kernel/fs.c:    if((addr = ip->addrs[bn]) == 0)
+./kernel/fs.c:      ip->addrs[bn] = addr = balloc(ip->dev);
+./kernel/fs.c:  bn -= NDIRECT;
+./kernel/fs.c:    if((addr = ip->addrs[NDIRECT]) == 0)
+./kernel/fs.c:      ip->addrs[NDIRECT] = addr = balloc(ip->dev);
+./kernel/fs.c:    bp = bread(ip->dev, addr);
+./kernel/fs.c:    a = (uint*)bp->data;
+./kernel/fs.c:      a[bn] = addr = balloc(ip->dev);
+./kernel/fs.c:    if(ip->addrs[i]){
+./kernel/fs.c:      bfree(ip->dev, ip->addrs[i]);
+./kernel/fs.c:      ip->addrs[i] = 0;
+./kernel/fs.c:  if(ip->addrs[NDIRECT]){
+./kernel/fs.c:    bp = bread(ip->dev, ip->addrs[NDIRECT]);
+./kernel/fs.c:    a = (uint*)bp->data;
+./kernel/fs.c:        bfree(ip->dev, a[j]);
+./kernel/fs.c:    bfree(ip->dev, ip->addrs[NDIRECT]);
+./kernel/fs.c:    ip->addrs[NDIRECT] = 0;
+./kernel/fs.c:  ip->size = 0;
+./kernel/fs.c:  st->dev = ip->dev;
+./kernel/fs.c:  st->ino = ip->inum;
+./kernel/fs.c:  st->type = ip->type;
+./kernel/fs.c:  st->nlink = ip->nlink;
+./kernel/fs.c:  st->size = ip->size;
+./kernel/fs.c:  if(ip->type == T_DEV){
+./kernel/fs.c:    if(ip->major < 0 || ip->major >= NDEV || !devsw[ip->major].read)
+./kernel/fs.c:      return -1;
+./kernel/fs.c:    return devsw[ip->major].read(ip, dst, n);
+./kernel/fs.c:  if(off > ip->size || off + n < off)
+./kernel/fs.c:    return -1;
+./kernel/fs.c:  if(off + n > ip->size)
+./kernel/fs.c:    n = ip->size - off;
+./kernel/fs.c:    bp = bread(ip->dev, bmap(ip, off/BSIZE));
+./kernel/fs.c:    m = min(n - tot, BSIZE - off%BSIZE);
+./kernel/fs.c:    memmove(dst, bp->data + off%BSIZE, m);
+./kernel/fs.c:  if(ip->type == T_DEV){
+./kernel/fs.c:    if(ip->major < 0 || ip->major >= NDEV || !devsw[ip->major].write)
+./kernel/fs.c:      return -1;
+./kernel/fs.c:    return devsw[ip->major].write(ip, src, n);
+./kernel/fs.c:  if(off > ip->size || off + n < off)
+./kernel/fs.c:    return -1;
+./kernel/fs.c:    n = MAXFILE*BSIZE - off;
+./kernel/fs.c:    bp = bread(ip->dev, bmap(ip, off/BSIZE));
+./kernel/fs.c:    m = min(n - tot, BSIZE - off%BSIZE);
+./kernel/fs.c:    memmove(bp->data + off%BSIZE, src, m);
+./kernel/fs.c:  if(n > 0 && off > ip->size){
+./kernel/fs.c:    ip->size = off;
+./kernel/fs.c:  if(dp->type != T_DIR)
+./kernel/fs.c:  for(off = 0; off < dp->size; off += BSIZE){
+./kernel/fs.c:    bp = bread(dp->dev, bmap(dp, off / BSIZE));
+./kernel/fs.c:    for(de = (struct dirent*)bp->data;
+./kernel/fs.c:        de < (struct dirent*)(bp->data + BSIZE);
+./kernel/fs.c:      if(de->inum == 0)
+./kernel/fs.c:      if(namecmp(name, de->name) == 0){
+./kernel/fs.c:          *poff = off + (uchar*)de - bp->data;
+./kernel/fs.c:        inum = de->inum;
+./kernel/fs.c:        return iget(dp->dev, inum);
+./kernel/fs.c:    return -1;
+./kernel/fs.c:  for(off = 0; off < dp->size; off += sizeof(de)){
+./kernel/fs.c:  len = path - s;
+./kernel/fs.c:    ip = idup(proc->cwd);
+./kernel/fs.c:    if(ip->type != T_DIR){
+./kernel/ide.c:// Simple PIO-based (non-DMA) IDE driver code.
+./kernel/ide.c:// idequeue->qnext points to the next buf to be processed.
+./kernel/ide.c:    return -1;
+./kernel/ide.c:  ioapicenable(IRQ_IDE, ncpu - 1);
+./kernel/ide.c:  outb(0x1f3, b->sector & 0xff);
+./kernel/ide.c:  outb(0x1f4, (b->sector >> 8) & 0xff);
+./kernel/ide.c:  outb(0x1f5, (b->sector >> 16) & 0xff);
+./kernel/ide.c:  outb(0x1f6, 0xe0 | ((b->dev&1)<<4) | ((b->sector>>24)&0x0f));
+./kernel/ide.c:  if(b->flags & B_DIRTY){
+./kernel/ide.c:    outsl(0x1f0, b->data, 512/4);
+./kernel/ide.c:  idequeue = b->qnext;
+./kernel/ide.c:  if(!(b->flags & B_DIRTY) && idewait(1) >= 0)
+./kernel/ide.c:    insl(0x1f0, b->data, 512/4);
+./kernel/ide.c:  b->flags |= B_VALID;
+./kernel/ide.c:  b->flags &= ~B_DIRTY;
+./kernel/ide.c:  if(!(b->flags & B_BUSY))
+./kernel/ide.c:  if((b->flags & (B_VALID|B_DIRTY)) == B_VALID)
+./kernel/ide.c:  if(b->dev != 0 && !havedisk1)
+./kernel/ide.c:  b->qnext = 0;
+./kernel/ide.c:  for(pp=&idequeue; *pp; pp=&(*pp)->qnext)
+./kernel/ide.c:  // Assuming will not sleep too long: ignore proc->killed.
+./kernel/ide.c:  while((b->flags & (B_VALID|B_DIRTY)) != B_VALID){
+./kernel/ioapic.c:#define INT_LEVEL      0x00008000  // Level-triggered (vs edge-)
+./kernel/ioapic.c:  ioapic->reg = reg;
+./kernel/ioapic.c:  return ioapic->data;
+./kernel/ioapic.c:  ioapic->reg = reg;
+./kernel/ioapic.c:  ioapic->data = data;
+./kernel/ioapic.c:  // Mark all interrupts edge-triggered, active high, disabled,
+./kernel/ioapic.c:  // Mark interrupt edge-triggered, active high,
+./kernel/kalloc.c:// and pipe buffers. Allocates 4096-byte pages.
+./kernel/kalloc.c:  r->next = kmem.freelist;
+./kernel/kalloc.c:// Allocate one 4096-byte page of physical memory.
+./kernel/kalloc.c:    kmem.freelist = r->next;
+./kernel/kbd.c:    return -1;
+./kernel/kbd.c:      c += 'A' - 'a';
+./kernel/kbd.c:      c += 'a' - 'A';
+./kernel/kbd.h:// C('A') == Control-A
+./kernel/kbd.h:#define C(x) (x - '@')
+./kernel/kbd.h:  '7',  '8',  '9',  '0',  '-',  '=',  '\b', '\t',
+./kernel/kbd.h:  '8',  '9',  '-',  '4',  '5',  '6',  '+',  '1',
+./kernel/kbd.h:  '8',  '9',  '-',  '4',  '5',  '6',  '+',  '1',
+./kernel/lapic.c:// The local APIC manages internal (non-I/O) interrupts.
+./kernel/lapic.c:  // Clear error status register (requires back-to-back writes).
+./kernel/lapic.c:  // Send an Init Level De-Assert to synchronise arbitration ID's.
+./kernel/lapic.c:  // Send INIT (level-triggered) interrupt to reset other CPU.
+./kernel/main.c:  jmpkstack();       // call mainc() on a properly-allocated stack 
+./kernel/main.c:  cprintf("\ncpu%d: starting xv6\n\n", cpu->id);
+./kernel/main.c:  cprintf("cpu%d: starting\n", cpu->id);
+./kernel/main.c:  xchg(&cpu->booted, 1); // tell bootothers() we're up
+./kernel/main.c:// Start the non-boot processors.
+./kernel/main.c:    *(void**)(code-4) = stack + KSTACKSIZE;
+./kernel/main.c:    *(void**)(code-8) = mpmain;
+./kernel/main.c:    lapicstartap(c->id, (uint)code);
+./kernel/main.c:    while(c->booted == 0)
+./kernel/makefile.mk:KERNEL_CPPFLAGS += -I include
+./kernel/makefile.mk:KERNEL_CPPFLAGS += -nostdinc
+./kernel/makefile.mk:KERNEL_CFLAGS += -fno-pic
+./kernel/makefile.mk:KERNEL_CFLAGS += -fno-builtin
+./kernel/makefile.mk:KERNEL_CFLAGS += -fno-strict-aliasing
+./kernel/makefile.mk:KERNEL_CFLAGS += -fno-stack-protector
+./kernel/makefile.mk:# generate code for 32-bit environment
+./kernel/makefile.mk:KERNEL_CFLAGS += -m32
+./kernel/makefile.mk:KERNEL_LDFLAGS += -m $(shell $(LD) -V | grep elf_i386 2>/dev/null)
+./kernel/makefile.mk:KERNEL_LDFLAGS += -nostdlib
+./kernel/makefile.mk:KERNEL_LDFLAGS += --omagic
+./kernel/makefile.mk:		--section-start=.text=0x100000 --entry=main --output=kernel/kernel \
+./kernel/makefile.mk:		-b binary initcode bootother
+./kernel/makefile.mk:		 -Os -c -o $@ $<
+./kernel/makefile.mk:		--entry=start --section-start=.text=0x7C00 \
+./kernel/makefile.mk:		--output=kernel/bootblock.out kernel/bootasm.o kernel/bootmain.o
+./kernel/makefile.mk:	$(OBJCOPY) -S -O binary -j .text kernel/bootblock.out kernel/bootblock
+./kernel/makefile.mk:		--entry=start --section-start=.text=0x7000 \
+./kernel/makefile.mk:		--output=kernel/bootother.out kernel/bootother.o
+./kernel/makefile.mk:	$(OBJCOPY) -S -O binary kernel/bootother.out $@
+./kernel/makefile.mk:		--entry=start --section-start=.text=0x0 \
+./kernel/makefile.mk:		--output=kernel/initcode.out kernel/initcode.o
+./kernel/makefile.mk:	$(OBJCOPY) -S -O binary kernel/initcode.out $@
+./kernel/makefile.mk:	$(CC) $(CPPFLAGS) $(KERNEL_CPPFLAGS) $(CFLAGS) $(KERNEL_CFLAGS) -c -o $@ $<
+./kernel/makefile.mk:	$(AS) $(CPPFLAGS) $(KERNEL_CPPFLAGS) $(ASFLAGS) $(KERNEL_ASFLAGS) -c $< -o $@
+./kernel/makefile.mk:		-M -MG $< -MF $@ -MT $@ -MT $(<:.c=.o)
+./kernel/makefile.mk:		-M -MG $< -MF $@ -MT $@ -MT $(<:.S=.o)
+./kernel/mmu.h:  uint db : 1;         // 0 = 16-bit segment, 1 = 32-bit segment
+./kernel/mmu.h:#define STA_E       0x4     // Expand down (non-executable segments)
+./kernel/mmu.h:#define STA_W       0x2     // Writeable (non-executable segments)
+./kernel/mmu.h:#define STS_T16A    0x1     // Available 16-bit TSS
+./kernel/mmu.h:#define STS_T16B    0x3     // Busy 16-bit TSS
+./kernel/mmu.h:#define STS_CG16    0x4     // 16-bit Call Gate
+./kernel/mmu.h:#define STS_IG16    0x6     // 16-bit Interrupt Gate
+./kernel/mmu.h:#define STS_TG16    0x7     // 16-bit Trap Gate
+./kernel/mmu.h:#define STS_T32A    0x9     // Available 32-bit TSS
+./kernel/mmu.h:#define STS_T32B    0xB     // Busy 32-bit TSS
+./kernel/mmu.h:#define STS_CG32    0xC     // 32-bit Call Gate
+./kernel/mmu.h:#define STS_IG32    0xE     // 32-bit Interrupt Gate
+./kernel/mmu.h:#define STS_TG32    0xF     // 32-bit Trap Gate
+./kernel/mmu.h:// A linear address 'la' has a three-part structure as follows:
+./kernel/mmu.h:// +--------10------+-------10-------+---------12----------+
+./kernel/mmu.h:// +----------------+----------------+---------------------+
+./kernel/mmu.h://  \--- PDX(la) --/ \--- PTX(la) --/
+./kernel/mmu.h:#define PGROUNDUP(sz)  (((sz)+PGSIZE-1) & ~(PGSIZE-1))
+./kernel/mmu.h:#define PGROUNDDOWN(a) ((char*)((((unsigned int)(a)) & ~(PGSIZE-1))))
+./kernel/mmu.h:#define PTE_PWT		0x008	// Write-Through
+./kernel/mmu.h:#define PTE_PCD		0x010	// Cache-Disable
+./kernel/mmu.h:// - istrap: 1 for a trap (= exception) gate, 0 for an interrupt gate.
+./kernel/mmu.h:// - sel: Code segment selector for interrupt/trap handler
+./kernel/mmu.h:// - off: Offset in code segment for interrupt/trap handler
+./kernel/mmu.h:// - dpl: Descriptor Privilege Level -
+./kernel/mp.c:  return bcpu-cpus;
+./kernel/mp.c:    if((mp = mpsearch1((uchar*)p-1024, 1024)))
+./kernel/mp.c:  if((mp = mpsearch()) == 0 || mp->physaddr == 0)
+./kernel/mp.c:  conf = (struct mpconf*)mp->physaddr;
+./kernel/mp.c:  if(conf->version != 1 && conf->version != 4)
+./kernel/mp.c:  if(sum((uchar*)conf, conf->length) != 0)
+./kernel/mp.c:  lapic = (uint*)conf->lapicaddr;
+./kernel/mp.c:  for(p=(uchar*)(conf+1), e=(uchar*)conf+conf->length; p<e; ){
+./kernel/mp.c:      if(ncpu != proc->apicid){
+./kernel/mp.c:        cprintf("mpinit: ncpu=%d apicid=%d\n", ncpu, proc->apicid);
+./kernel/mp.c:      if(proc->flags & MPBOOT)
+./kernel/mp.c:      ioapicid = ioapic->apicno;
+./kernel/mp.c:  if(mp->imcrp){
+./kernel/multiboot.S:  .long (-magic-flags)
+./kernel/multiboot.S:# boot loader - bootasm.S - sets up.
+./kernel/multiboot.S:  # Set up the protected-mode data segment registers
+./kernel/multiboot.S:  movw    %ax, %ds                # -> DS: Data Segment
+./kernel/multiboot.S:  movw    %ax, %es                # -> ES: Extra Segment
+./kernel/multiboot.S:  movw    %ax, %ss                # -> SS: Stack Segment
+./kernel/multiboot.S:  movw    %ax, %fs                # -> FS
+./kernel/multiboot.S:  movw    %ax, %gs                # -> GS
+./kernel/multiboot.S:  .word   (gdtdesc - gdt - 1)             # sizeof(gdt) - 1
+./kernel/picirq.c:#define IO_PIC1         0x20    // Master (IRQs 0-7)
+./kernel/picirq.c:#define IO_PIC2         0xA0    // Slave (IRQs 8-15)
+./kernel/picirq.c:  // Set up master (8259A-1)
+./kernel/picirq.c:  //        (slave PIC) 3-bit # of slave's connection to master
+./kernel/picirq.c:  //    p:  0 = MCS-80/85 mode, 1 = intel x86 mode
+./kernel/picirq.c:  // Set up slave (8259A-2)
+./kernel/pipe.c:  p->readopen = 1;
+./kernel/pipe.c:  p->writeopen = 1;
+./kernel/pipe.c:  p->nwrite = 0;
+./kernel/pipe.c:  p->nread = 0;
+./kernel/pipe.c:  initlock(&p->lock, "pipe");
+./kernel/pipe.c:  (*f0)->type = FD_PIPE;
+./kernel/pipe.c:  (*f0)->readable = 1;
+./kernel/pipe.c:  (*f0)->writable = 0;
+./kernel/pipe.c:  (*f0)->pipe = p;
+./kernel/pipe.c:  (*f1)->type = FD_PIPE;
+./kernel/pipe.c:  (*f1)->readable = 0;
+./kernel/pipe.c:  (*f1)->writable = 1;
+./kernel/pipe.c:  (*f1)->pipe = p;
+./kernel/pipe.c:  return -1;
+./kernel/pipe.c:  acquire(&p->lock);
+./kernel/pipe.c:    p->writeopen = 0;
+./kernel/pipe.c:    wakeup(&p->nread);
+./kernel/pipe.c:    p->readopen = 0;
+./kernel/pipe.c:    wakeup(&p->nwrite);
+./kernel/pipe.c:  if(p->readopen == 0 && p->writeopen == 0){
+./kernel/pipe.c:    release(&p->lock);
+./kernel/pipe.c:    release(&p->lock);
+./kernel/pipe.c:  acquire(&p->lock);
+./kernel/pipe.c:    while(p->nwrite == p->nread + PIPESIZE){  //DOC: pipewrite-full
+./kernel/pipe.c:      if(p->readopen == 0 || proc->killed){
+./kernel/pipe.c:        release(&p->lock);
+./kernel/pipe.c:        return -1;
+./kernel/pipe.c:      wakeup(&p->nread);
+./kernel/pipe.c:      sleep(&p->nwrite, &p->lock);  //DOC: pipewrite-sleep
+./kernel/pipe.c:    p->data[p->nwrite++ % PIPESIZE] = addr[i];
+./kernel/pipe.c:  wakeup(&p->nread);  //DOC: pipewrite-wakeup1
+./kernel/pipe.c:  release(&p->lock);
+./kernel/pipe.c:  acquire(&p->lock);
+./kernel/pipe.c:  while(p->nread == p->nwrite && p->writeopen){  //DOC: pipe-empty
+./kernel/pipe.c:    if(proc->killed){
+./kernel/pipe.c:      release(&p->lock);
+./kernel/pipe.c:      return -1;
+./kernel/pipe.c:    sleep(&p->nread, &p->lock); //DOC: piperead-sleep
+./kernel/pipe.c:  for(i = 0; i < n; i++){  //DOC: piperead-copy
+./kernel/pipe.c:    if(p->nread == p->nwrite)
+./kernel/pipe.c:    addr[i] = p->data[p->nread++ % PIPESIZE];
+./kernel/pipe.c:  wakeup(&p->nwrite);  //DOC: piperead-wakeup
+./kernel/pipe.c:  release(&p->lock);
+./kernel/proc.c:    if(p->state == UNUSED)
+./kernel/proc.c:  p->state = EMBRYO;
+./kernel/proc.c:  p->pid = nextpid++;
+./kernel/proc.c:  if((p->kstack = kalloc()) == 0){
+./kernel/proc.c:    p->state = UNUSED;
+./kernel/proc.c:  sp = p->kstack + KSTACKSIZE;
+./kernel/proc.c:  sp -= sizeof *p->tf;
+./kernel/proc.c:  p->tf = (struct trapframe*)sp;
+./kernel/proc.c:  sp -= 4;
+./kernel/proc.c:  sp -= sizeof *p->context;
+./kernel/proc.c:  p->context = (struct context*)sp;
+./kernel/proc.c:  memset(p->context, 0, sizeof *p->context);
+./kernel/proc.c:  p->context->eip = (uint)forkret;
+./kernel/proc.c:  if((p->pgdir = setupkvm()) == 0)
+./kernel/proc.c:  inituvm(p->pgdir, _binary_initcode_start, (int)_binary_initcode_size);
+./kernel/proc.c:  /*p->sz orig. equalled just pgsize, but this didn't make sense with new scheme...might be wrong tho*/
+./kernel/proc.c:  p->sz = 2*PGSIZE;
+./kernel/proc.c:  memset(p->tf, 0, sizeof(*p->tf));
+./kernel/proc.c:  p->tf->cs = (SEG_UCODE << 3) | DPL_USER;
+./kernel/proc.c:  p->tf->ds = (SEG_UDATA << 3) | DPL_USER;
+./kernel/proc.c:  p->tf->es = p->tf->ds;
+./kernel/proc.c:  p->tf->ss = p->tf->ds;
+./kernel/proc.c:  p->tf->eflags = FL_IF;
+./kernel/proc.c:  p->tf->esp = PGSIZE;
+./kernel/proc.c:  p->tf->eip = 0;  // beginning of initcode.S
+./kernel/proc.c:  safestrcpy(p->name, "initcode", sizeof(p->name));
+./kernel/proc.c:  p->cwd = namei("/");
+./kernel/proc.c:  p->state = RUNNABLE;
+./kernel/proc.c:// Return 0 on success, -1 on failure.
+./kernel/proc.c:  sz = proc->sz;
+./kernel/proc.c:    if((sz = allocuvm(proc->pgdir, sz, sz + n)) == 0)
+./kernel/proc.c:      return -1;
+./kernel/proc.c:    if((sz = deallocuvm(proc->pgdir, sz, sz + n)) == 0)
+./kernel/proc.c:      return -1;
+./kernel/proc.c:  proc->sz = sz;
+./kernel/proc.c:    return -1;
+./kernel/proc.c:  if((np->pgdir = copyuvm(proc->pgdir, proc->sz, proc->stack_top)) == 0){
+./kernel/proc.c:    kfree(np->kstack);
+./kernel/proc.c:    np->kstack = 0;
+./kernel/proc.c:    np->state = UNUSED;
+./kernel/proc.c:    return -1;
+./kernel/proc.c:  np->sz = proc->sz;
+./kernel/proc.c:  np->stack_top = proc->stack_top;
+./kernel/proc.c:  np->code_top = proc->code_top;
+./kernel/proc.c:  np->parent = proc;
+./kernel/proc.c:  *np->tf = *proc->tf;
+./kernel/proc.c:  np->tf->eax = 0;
+./kernel/proc.c:    if(proc->ofile[i])
+./kernel/proc.c:      np->ofile[i] = filedup(proc->ofile[i]);
+./kernel/proc.c:  np->cwd = idup(proc->cwd);
+./kernel/proc.c:  pid = np->pid;
+./kernel/proc.c:  np->state = RUNNABLE;
+./kernel/proc.c:  safestrcpy(np->name, proc->name, sizeof(proc->name));
+./kernel/proc.c:    if(proc->ofile[fd]){
+./kernel/proc.c:      fileclose(proc->ofile[fd]);
+./kernel/proc.c:      proc->ofile[fd] = 0;
+./kernel/proc.c:  iput(proc->cwd);
+./kernel/proc.c:  proc->cwd = 0;
+./kernel/proc.c:  wakeup1(proc->parent);
+./kernel/proc.c:    if(p->parent == proc){
+./kernel/proc.c:      p->parent = initproc;
+./kernel/proc.c:      if(p->state == ZOMBIE)
+./kernel/proc.c:  proc->state = ZOMBIE;
+./kernel/proc.c:// Return -1 if this process has no children.
+./kernel/proc.c:      if(p->parent != proc)
+./kernel/proc.c:      if(p->state == ZOMBIE){
+./kernel/proc.c:        pid = p->pid;
+./kernel/proc.c:        kfree(p->kstack);
+./kernel/proc.c:        p->kstack = 0;
+./kernel/proc.c:        freevm(p->pgdir);
+./kernel/proc.c:        p->state = UNUSED;
+./kernel/proc.c:        p->pid = 0;
+./kernel/proc.c:        p->parent = 0;
+./kernel/proc.c:        p->name[0] = 0;
+./kernel/proc.c:        p->killed = 0;
+./kernel/proc.c:    if(!havekids || proc->killed){
+./kernel/proc.c:      return -1;
+./kernel/proc.c:    sleep(proc, &ptable.lock);  //DOC: wait-sleep
+./kernel/proc.c:// Per-CPU process scheduler.
+./kernel/proc.c://  - choose a process to run
+./kernel/proc.c://  - swtch to start running that process
+./kernel/proc.c://  - eventually that process transfers control
+./kernel/proc.c:      if(p->state != RUNNABLE)
+./kernel/proc.c:      p->state = RUNNING;
+./kernel/proc.c:      swtch(&cpu->scheduler, proc->context);
+./kernel/proc.c:      // It should have changed its p->state before coming back.
+./kernel/proc.c:// and have changed proc->state.
+./kernel/proc.c:  if(cpu->ncli != 1)
+./kernel/proc.c:  if(proc->state == RUNNING)
+./kernel/proc.c:  intena = cpu->intena;
+./kernel/proc.c:  swtch(&proc->context, cpu->scheduler);
+./kernel/proc.c:  cpu->intena = intena;
+./kernel/proc.c:  proc->state = RUNNABLE;
+./kernel/proc.c:  // change p->state and then call sched.
+./kernel/proc.c:  proc->chan = chan;
+./kernel/proc.c:  proc->state = SLEEPING;
+./kernel/proc.c:  proc->chan = 0;
+./kernel/proc.c:    if(p->state == SLEEPING && p->chan == chan)
+./kernel/proc.c:      p->state = RUNNABLE;
+./kernel/proc.c:    if(p->pid == pid){
+./kernel/proc.c:      p->killed = 1;
+./kernel/proc.c:      if(p->state == SLEEPING)
+./kernel/proc.c:        p->state = RUNNABLE;
+./kernel/proc.c:  return -1;
+./kernel/proc.c:    if(p->state == UNUSED)
+./kernel/proc.c:    if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
+./kernel/proc.c:      state = states[p->state];
+./kernel/proc.c:    cprintf("%d %s %s", p->pid, state, p->name);
+./kernel/proc.c:    if(p->state == SLEEPING){
+./kernel/proc.c:      getcallerpcs((uint*)p->context->ebp+2, pc);
+./kernel/proc.c~:    if(p->state == UNUSED)
+./kernel/proc.c~:  p->state = EMBRYO;
+./kernel/proc.c~:  p->pid = nextpid++;
+./kernel/proc.c~:  if((p->kstack = kalloc()) == 0){
+./kernel/proc.c~:    p->state = UNUSED;
+./kernel/proc.c~:  sp = p->kstack + KSTACKSIZE;
+./kernel/proc.c~:  sp -= sizeof *p->tf;
+./kernel/proc.c~:  p->tf = (struct trapframe*)sp;
+./kernel/proc.c~:  sp -= 4;
+./kernel/proc.c~:  sp -= sizeof *p->context;
+./kernel/proc.c~:  p->context = (struct context*)sp;
+./kernel/proc.c~:  memset(p->context, 0, sizeof *p->context);
+./kernel/proc.c~:  p->context->eip = (uint)forkret;
+./kernel/proc.c~:  if((p->pgdir = setupkvm()) == 0)
+./kernel/proc.c~:  inituvm(p->pgdir, _binary_initcode_start, (int)_binary_initcode_size);
+./kernel/proc.c~:  p->sz = 2*PGSIZE;
+./kernel/proc.c~:  memset(p->tf, 0, sizeof(*p->tf));
+./kernel/proc.c~:  p->tf->cs = (SEG_UCODE << 3) | DPL_USER;
+./kernel/proc.c~:  p->tf->ds = (SEG_UDATA << 3) | DPL_USER;
+./kernel/proc.c~:  p->tf->es = p->tf->ds;
+./kernel/proc.c~:  p->tf->ss = p->tf->ds;
+./kernel/proc.c~:  p->tf->eflags = FL_IF;
+./kernel/proc.c~:  p->tf->esp = PGSIZE;
+./kernel/proc.c~:  p->tf->eip = 0;  // beginning of initcode.S
+./kernel/proc.c~:  safestrcpy(p->name, "initcode", sizeof(p->name));
+./kernel/proc.c~:  p->cwd = namei("/");
+./kernel/proc.c~:  p->state = RUNNABLE;
+./kernel/proc.c~:// Return 0 on success, -1 on failure.
+./kernel/proc.c~:  sz = proc->sz;
+./kernel/proc.c~:    if((sz = allocuvm(proc->pgdir, sz, sz + n)) == 0)
+./kernel/proc.c~:      return -1;
+./kernel/proc.c~:    if((sz = deallocuvm(proc->pgdir, sz, sz + n)) == 0)
+./kernel/proc.c~:      return -1;
+./kernel/proc.c~:  proc->sz = sz;
+./kernel/proc.c~:    return -1;
+./kernel/proc.c~:  if((np->pgdir = copyuvm(proc->pgdir, proc->sz, proc->stack_top)) == 0){
+./kernel/proc.c~:    kfree(np->kstack);
+./kernel/proc.c~:    np->kstack = 0;
+./kernel/proc.c~:    np->state = UNUSED;
+./kernel/proc.c~:    return -1;
+./kernel/proc.c~:  np->sz = proc->sz;
+./kernel/proc.c~:  np->stack_top = proc->stack_top;
+./kernel/proc.c~:  np->code_top = proc->code_top;
+./kernel/proc.c~:  np->parent = proc;
+./kernel/proc.c~:  *np->tf = *proc->tf;
+./kernel/proc.c~:  np->tf->eax = 0;
+./kernel/proc.c~:    if(proc->ofile[i])
+./kernel/proc.c~:      np->ofile[i] = filedup(proc->ofile[i]);
+./kernel/proc.c~:  np->cwd = idup(proc->cwd);
+./kernel/proc.c~:  pid = np->pid;
+./kernel/proc.c~:  np->state = RUNNABLE;
+./kernel/proc.c~:  safestrcpy(np->name, proc->name, sizeof(proc->name));
+./kernel/proc.c~:    if(proc->ofile[fd]){
+./kernel/proc.c~:      fileclose(proc->ofile[fd]);
+./kernel/proc.c~:      proc->ofile[fd] = 0;
+./kernel/proc.c~:  iput(proc->cwd);
+./kernel/proc.c~:  proc->cwd = 0;
+./kernel/proc.c~:  wakeup1(proc->parent);
+./kernel/proc.c~:    if(p->parent == proc){
+./kernel/proc.c~:      p->parent = initproc;
+./kernel/proc.c~:      if(p->state == ZOMBIE)
+./kernel/proc.c~:  proc->state = ZOMBIE;
+./kernel/proc.c~:// Return -1 if this process has no children.
+./kernel/proc.c~:      if(p->parent != proc)
+./kernel/proc.c~:      if(p->state == ZOMBIE){
+./kernel/proc.c~:        pid = p->pid;
+./kernel/proc.c~:        kfree(p->kstack);
+./kernel/proc.c~:        p->kstack = 0;
+./kernel/proc.c~:        freevm(p->pgdir);
+./kernel/proc.c~:        p->state = UNUSED;
+./kernel/proc.c~:        p->pid = 0;
+./kernel/proc.c~:        p->parent = 0;
+./kernel/proc.c~:        p->name[0] = 0;
+./kernel/proc.c~:        p->killed = 0;
+./kernel/proc.c~:    if(!havekids || proc->killed){
+./kernel/proc.c~:      return -1;
+./kernel/proc.c~:    sleep(proc, &ptable.lock);  //DOC: wait-sleep
+./kernel/proc.c~:// Per-CPU process scheduler.
+./kernel/proc.c~://  - choose a process to run
+./kernel/proc.c~://  - swtch to start running that process
+./kernel/proc.c~://  - eventually that process transfers control
+./kernel/proc.c~:      if(p->state != RUNNABLE)
+./kernel/proc.c~:      p->state = RUNNING;
+./kernel/proc.c~:      swtch(&cpu->scheduler, proc->context);
+./kernel/proc.c~:      // It should have changed its p->state before coming back.
+./kernel/proc.c~:// and have changed proc->state.
+./kernel/proc.c~:  if(cpu->ncli != 1)
+./kernel/proc.c~:  if(proc->state == RUNNING)
+./kernel/proc.c~:  intena = cpu->intena;
+./kernel/proc.c~:  swtch(&proc->context, cpu->scheduler);
+./kernel/proc.c~:  cpu->intena = intena;
+./kernel/proc.c~:  proc->state = RUNNABLE;
+./kernel/proc.c~:  // change p->state and then call sched.
+./kernel/proc.c~:  proc->chan = chan;
+./kernel/proc.c~:  proc->state = SLEEPING;
+./kernel/proc.c~:  proc->chan = 0;
+./kernel/proc.c~:    if(p->state == SLEEPING && p->chan == chan)
+./kernel/proc.c~:      p->state = RUNNABLE;
+./kernel/proc.c~:    if(p->pid == pid){
+./kernel/proc.c~:      p->killed = 1;
+./kernel/proc.c~:      if(p->state == SLEEPING)
+./kernel/proc.c~:        p->state = RUNNABLE;
+./kernel/proc.c~:  return -1;
+./kernel/proc.c~:    if(p->state == UNUSED)
+./kernel/proc.c~:    if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
+./kernel/proc.c~:      state = states[p->state];
+./kernel/proc.c~:    cprintf("%d %s %s", p->pid, state, p->name);
+./kernel/proc.c~:    if(p->state == SLEEPING){
+./kernel/proc.c~:      getcallerpcs((uint*)p->context->ebp+2, pc);
+./kernel/proc.h:// Segments in proc->gdt.
+./kernel/proc.h:#define SEG_KCPU  3  // kernel per-cpu data
+./kernel/proc.h:// Per-CPU state
+./kernel/proc.h:  // Cpu-local storage variables; see below
+./kernel/proc.h:  struct proc *proc;           // The currently-running process.
+./kernel/proc.h:// Per-CPU variables, holding pointers to the
+./kernel/proc.h:// This is similar to how thread-local variables are implemented
+./kernel/proc.h:// Per-process state
+./kernel/proc.h:  void *chan;                  // If non-zero, sleeping on chan
+./kernel/proc.h:  int killed;                  // If non-zero, have been killed
+./kernel/proc.h://   fixed-size stack
+./kernel/sign.pl:$buf .= "\0" x (510-$n);
+./kernel/spinlock.c:  lk->name = name;
+./kernel/spinlock.c:  lk->locked = 0;
+./kernel/spinlock.c:  lk->cpu = 0;
+./kernel/spinlock.c:  while(xchg(&lk->locked, 1) != 0)
+./kernel/spinlock.c:  lk->cpu = cpu;
+./kernel/spinlock.c:  getcallerpcs(&lk, lk->pcs);
+./kernel/spinlock.c:  lk->pcs[0] = 0;
+./kernel/spinlock.c:  lk->cpu = 0;
+./kernel/spinlock.c:  // Paper says that Intel 64 and IA-32 will not move a load
+./kernel/spinlock.c:  // after a store. So lock->locked = 0 would work here.
+./kernel/spinlock.c:  xchg(&lk->locked, 0);
+./kernel/spinlock.c:  ebp = (uint*)v - 2;
+./kernel/spinlock.c:  return lock->locked && lock->cpu == cpu;
+./kernel/spinlock.c:  if(cpu->ncli++ == 0)
+./kernel/spinlock.c:    cpu->intena = eflags & FL_IF;
+./kernel/spinlock.c:    panic("popcli - interruptible");
+./kernel/spinlock.c:  if(--cpu->ncli < 0)
+./kernel/spinlock.c:  if(cpu->ncli == 0 && cpu->intena)
+./kernel/string.c:  while(n-- > 0){
+./kernel/string.c:      return *s1 - *s2;
+./kernel/string.c:    while(n-- > 0)
+./kernel/string.c:      *--d = *--s;
+./kernel/string.c:    while(n-- > 0)
+./kernel/string.c:    n--, p++, q++;
+./kernel/string.c:  return (uchar)*p - (uchar)*q;
+./kernel/string.c:  while(n-- > 0 && (*s++ = *t++) != 0)
+./kernel/string.c:  while(n-- > 0)
+./kernel/string.c:// Like strncpy but guaranteed to NUL-terminate.
+./kernel/string.c:  while(--n > 0 && (*s++ = *t++) != 0)
+./kernel/swtch.S:  # Save old callee-save registers
+./kernel/swtch.S:  # Load new callee-save registers
+./kernel/syscall.c:  //if(addr >= p->sz || addr+4 > p->sz)
+./kernel/syscall.c:  if(addr < PGSIZE || ((addr >= p->sz) && (addr < p->stack_top)) ||  (addr+4) > p->sz || (addr+4) > USERTOP )
+./kernel/syscall.c:    return -1;
+./kernel/syscall.c:// Fetch the nul-terminated string at addr from process p.
+./kernel/syscall.c:// Doesn't actually copy the string - just sets *pp to point at it.
+./kernel/syscall.c:  if(addr >= p->sz)
+./kernel/syscall.c:  if(addr < PGSIZE || ((addr >= p->sz) && (addr < p->stack_top)))
+./kernel/syscall.c:    return -1;
+./kernel/syscall.c:  ep = (char*)p->sz;
+./kernel/syscall.c:      return s - *pp;
+./kernel/syscall.c:  return -1;
+./kernel/syscall.c:// Fetch the nth 32-bit system call argument.
+./kernel/syscall.c:  return fetchint(proc, proc->tf->esp + 4 + 4*n, ip);
+./kernel/syscall.c:// Fetch the nth word-sized system call argument as a pointer
+./kernel/syscall.c:    return -1;
+./kernel/syscall.c:  if((uint)i < PGSIZE || (((uint)i >= proc->sz) && ((uint)i < proc->stack_top)) ||  (uint)i+size > proc->sz || (uint)i+size > USERTOP )
+./kernel/syscall.c:    return -1;
+./kernel/syscall.c:  if((uint)i >= proc->sz || (uint)i+size > proc->sz)
+./kernel/syscall.c:    return -1;
+./kernel/syscall.c:// Fetch the nth word-sized system call argument as a string pointer.
+./kernel/syscall.c:// Check that the pointer is valid and the string is nul-terminated.
+./kernel/syscall.c:    return -1;
+./kernel/syscall.c:  num = proc->tf->eax;
+./kernel/syscall.c:    proc->tf->eax = syscalls[num]();
+./kernel/syscall.c:            proc->pid, proc->name, num);
+./kernel/syscall.c:    proc->tf->eax = -1;
+./kernel/syscall.c~:  //if(addr >= p->sz || addr+4 > p->sz)
+./kernel/syscall.c~:  if(addr < PGSIZE || ((addr >= p->sz) && (addr < p->stack_top)) ||  (addr+4) > p->sz || (addr+4) > USERTOP )
+./kernel/syscall.c~:    return -1;
+./kernel/syscall.c~:// Fetch the nul-terminated string at addr from process p.
+./kernel/syscall.c~:// Doesn't actually copy the string - just sets *pp to point at it.
+./kernel/syscall.c~:  if(addr >= p->sz)
+./kernel/syscall.c~:  //if(addr < PGSIZE || ((addr >= p->sz) && (addr < p->stack_top)))
+./kernel/syscall.c~:    return -1;
+./kernel/syscall.c~:  ep = (char*)p->sz;
+./kernel/syscall.c~:      return s - *pp;
+./kernel/syscall.c~:  return -1;
+./kernel/syscall.c~:// Fetch the nth 32-bit system call argument.
+./kernel/syscall.c~:  return fetchint(proc, proc->tf->esp + 4 + 4*n, ip);
+./kernel/syscall.c~:// Fetch the nth word-sized system call argument as a pointer
+./kernel/syscall.c~:    return -1;
+./kernel/syscall.c~:  if((uint)i < PGSIZE || (((uint)i >= proc->sz) && ((uint)i < proc->stack_top)) ||  (uint)i+size > proc->sz || (uint)i+size > USERTOP )
+./kernel/syscall.c~:    return -1;
+./kernel/syscall.c~:  if((uint)i >= proc->sz || (uint)i+size > proc->sz)
+./kernel/syscall.c~:    return -1;
+./kernel/syscall.c~:// Fetch the nth word-sized system call argument as a string pointer.
+./kernel/syscall.c~:// Check that the pointer is valid and the string is nul-terminated.
+./kernel/syscall.c~:    return -1;
+./kernel/syscall.c~:  num = proc->tf->eax;
+./kernel/syscall.c~:    proc->tf->eax = syscalls[num]();
+./kernel/syscall.c~:            proc->pid, proc->name, num);
+./kernel/syscall.c~:    proc->tf->eax = -1;
+./kernel/sysfile.c:// Fetch the nth word-sized system call argument as a file descriptor
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:  if(fd < 0 || fd >= NOFILE || (f=proc->ofile[fd]) == 0)
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:    if(proc->ofile[fd] == 0){
+./kernel/sysfile.c:      proc->ofile[fd] = f;
+./kernel/sysfile.c:  return -1;
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:  proc->ofile[fd] = 0;
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:  if(ip->type == T_DIR){
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:  ip->nlink++;
+./kernel/sysfile.c:  if(dp->dev != ip->dev || dirlink(dp, name, ip->inum) < 0){
+./kernel/sysfile.c:  ip->nlink--;
+./kernel/sysfile.c:  return -1;
+./kernel/sysfile.c:  for(off=2*sizeof(de); off<dp->size; off+=sizeof(de)){
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:  if(ip->nlink < 1)
+./kernel/sysfile.c:  if(ip->type == T_DIR && !isdirempty(ip)){
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:  if(ip->type == T_DIR){
+./kernel/sysfile.c:    dp->nlink--;
+./kernel/sysfile.c:  ip->nlink--;
+./kernel/sysfile.c:    if(type == T_FILE && ip->type == T_FILE)
+./kernel/sysfile.c:  if((ip = ialloc(dp->dev, type)) == 0)
+./kernel/sysfile.c:  ip->major = major;
+./kernel/sysfile.c:  ip->minor = minor;
+./kernel/sysfile.c:  ip->nlink = 1;
+./kernel/sysfile.c:    dp->nlink++;  // for ".."
+./kernel/sysfile.c:    // No ip->nlink++ for ".": avoid cyclic ref count.
+./kernel/sysfile.c:    if(dirlink(ip, ".", ip->inum) < 0 || dirlink(ip, "..", dp->inum) < 0)
+./kernel/sysfile.c:  if(dirlink(dp, name, ip->inum) < 0)
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:      return -1;
+./kernel/sysfile.c:      return -1;
+./kernel/sysfile.c:    if(ip->type == T_DIR && omode != O_RDONLY){
+./kernel/sysfile.c:      return -1;
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:  f->type = FD_INODE;
+./kernel/sysfile.c:  f->ip = ip;
+./kernel/sysfile.c:  f->off = 0;
+./kernel/sysfile.c:  f->readable = !(omode & O_WRONLY);
+./kernel/sysfile.c:  f->writable = (omode & O_WRONLY) || (omode & O_RDWR);
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:  if(ip->type != T_DIR){
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:  iput(proc->cwd);
+./kernel/sysfile.c:  proc->cwd = ip;
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:      return -1;
+./kernel/sysfile.c:      return -1;
+./kernel/sysfile.c:      return -1;
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:    return -1;
+./kernel/sysfile.c:  fd0 = -1;
+./kernel/sysfile.c:      proc->ofile[fd0] = 0;
+./kernel/sysfile.c:    return -1;
+./kernel/sysproc.c:    return -1;
+./kernel/sysproc.c:  return proc->pid;
+./kernel/sysproc.c:    return -1;
+./kernel/sysproc.c:  addr = proc->sz;//should be fine cause we stored sz immediately after code region so it should still behave properly
+./kernel/sysproc.c:  /*supposed to keep before the stack. Aka, check that heap top + n >= stack_top - pgsize */
+./kernel/sysproc.c:  if( (addr+n) >= (proc->stack_top - PGSIZE))
+./kernel/sysproc.c:    return -1;
+./kernel/sysproc.c:    return -1;
+./kernel/sysproc.c:  while(ticks - ticks0 < n){
+./kernel/sysproc.c:    if(proc->killed){
+./kernel/sysproc.c:      return -1;
+./kernel/sz:console.c:      if(proc->killed){
+./kernel/sz:exec.c:  proc->sz = sz;
+./kernel/sz:exec.c:  proc->heap_top = ht;
+./kernel/sz:exec.c:  proc->stack_top = st;
+./kernel/sz:exec.c:  safestrcpy(proc->name, last, sizeof(proc->name));
+./kernel/sz:exec.c:  oldpgdir = proc->pgdir;
+./kernel/sz:exec.c:  proc->pgdir = pgdir;
+./kernel/sz:exec.c:  proc->tf->eip = elf.entry;  // main
+./kernel/sz:exec.c:  proc->tf->esp = sp;
+./kernel/sz:exec.c~:  proc->sz = sz;
+./kernel/sz:exec.c~:  proc->heap_top = ht;
+./kernel/sz:exec.c~:  proc->stack_top = st;
+./kernel/sz:exec.c~:  safestrcpy(proc->name, last, sizeof(proc->name));
+./kernel/sz:exec.c~:  oldpgdir = proc->pgdir;
+./kernel/sz:exec.c~:  proc->pgdir = pgdir;
+./kernel/sz:exec.c~:  proc->tf->eip = elf.entry;  // main
+./kernel/sz:exec.c~:  proc->tf->esp = sp;
+./kernel/sz:fs.c:// inode; references are typically kept in struct file and in proc->cwd.
+./kernel/sz:fs.c:    ip = idup(proc->cwd);
+./kernel/sz:ide.c:  // Assuming will not sleep too long: ignore proc->killed.
+./kernel/sz:mp.c:      if(ncpu != proc->apicid){
+./kernel/sz:mp.c:        cprintf("mpinit: ncpu=%d apicid=%d\n", ncpu, proc->apicid);
+./kernel/sz:mp.c:      if(proc->flags & MPBOOT)
+./kernel/sz:pipe.c:      if(p->readopen == 0 || proc->killed){
+./kernel/sz:pipe.c:    if(proc->killed){
+./kernel/sz:proc.c:  sz = proc->sz;
+./kernel/sz:proc.c:    if((sz = allocuvm(proc->pgdir, sz, sz + n)) == 0)
+./kernel/sz:proc.c:    if((sz = deallocuvm(proc->pgdir, sz, sz + n)) == 0)
+./kernel/sz:proc.c:  proc->sz = sz;
+./kernel/sz:proc.c:  if((np->pgdir = copyuvm(proc->pgdir, proc->sz)) == 0){
+./kernel/sz:proc.c:  np->sz = proc->sz;
+./kernel/sz:proc.c:  *np->tf = *proc->tf;
+./kernel/sz:proc.c:    if(proc->ofile[i])
+./kernel/sz:proc.c:      np->ofile[i] = filedup(proc->ofile[i]);
+./kernel/sz:proc.c:  np->cwd = idup(proc->cwd);
+./kernel/sz:proc.c:  safestrcpy(np->name, proc->name, sizeof(proc->name));
+./kernel/sz:proc.c:    if(proc->ofile[fd]){
+./kernel/sz:proc.c:      fileclose(proc->ofile[fd]);
+./kernel/sz:proc.c:      proc->ofile[fd] = 0;
+./kernel/sz:proc.c:  iput(proc->cwd);
+./kernel/sz:proc.c:  proc->cwd = 0;
+./kernel/sz:proc.c:  wakeup1(proc->parent);
+./kernel/sz:proc.c:  proc->state = ZOMBIE;
+./kernel/sz:proc.c:    if(!havekids || proc->killed){
+./kernel/sz:proc.c:      swtch(&cpu->scheduler, proc->context);
+./kernel/sz:proc.c:// and have changed proc->state.
+./kernel/sz:proc.c:  if(proc->state == RUNNING)
+./kernel/sz:proc.c:  swtch(&proc->context, cpu->scheduler);
+./kernel/sz:proc.c:  proc->state = RUNNABLE;
+./kernel/sz:proc.c:  proc->chan = chan;
+./kernel/sz:proc.c:  proc->state = SLEEPING;
+./kernel/sz:proc.c:  proc->chan = 0;
+./kernel/sz:proc.h:// Segments in proc->gdt.
+./kernel/sz:proc.h~:// Segments in proc->gdt.
+./kernel/sz:syscall.c:  return fetchint(proc, proc->tf->esp + 4 + 4*n, ip);
+./kernel/sz:syscall.c:  if((uint)i >= proc->sz || (uint)i+size > proc->sz)
+./kernel/sz:syscall.c:  num = proc->tf->eax;
+./kernel/sz:syscall.c:    proc->tf->eax = syscalls[num]();
+./kernel/sz:syscall.c:            proc->pid, proc->name, num);
+./kernel/sz:syscall.c:    proc->tf->eax = -1;
+./kernel/sz:sysfile.c:  if(fd < 0 || fd >= NOFILE || (f=proc->ofile[fd]) == 0)
+./kernel/sz:sysfile.c:    if(proc->ofile[fd] == 0){
+./kernel/sz:sysfile.c:      proc->ofile[fd] = f;
+./kernel/sz:sysfile.c:  proc->ofile[fd] = 0;
+./kernel/sz:sysfile.c:  iput(proc->cwd);
+./kernel/sz:sysfile.c:  proc->cwd = ip;
+./kernel/sz:sysfile.c:      proc->ofile[fd0] = 0;
+./kernel/sz:sysproc.c:  return proc->pid;
+./kernel/sz:sysproc.c:  addr = proc->sz;
+./kernel/sz:sysproc.c:    if(proc->killed){
+./kernel/sz:trap.c:    if(proc->killed)
+./kernel/sz:trap.c:    proc->tf = tf;
+./kernel/sz:trap.c:    if(proc->killed)
+./kernel/sz:trap.c:            proc->pid, proc->name, tf->trapno, tf->err, cpu->id, tf->eip, 
+./kernel/sz:trap.c:    proc->killed = 1;
+./kernel/sz:trap.c:  if(proc && proc->killed && (tf->cs&3) == DPL_USER)
+./kernel/sz:trap.c:  if(proc && proc->state == RUNNING && tf->trapno == T_IRQ0+IRQ_TIMER)
+./kernel/sz:trap.c:  if(proc && proc->killed && (tf->cs&3) == DPL_USER)
+./kernel/sz:vm.c:  cpu->ts.esp0 = (uint)proc->kstack + KSTACKSIZE;
+./kernel/sz:vm.c~:  cpu->ts.esp0 = (uint)proc->kstack + KSTACKSIZE;
+./kernel/timer.c:// Frequency of all three count-down timers;
+./kernel/trapasm.S:#define SEG_KCPU  3  // kernel per-cpu data
+./kernel/trapasm.S:  # Set up data and per-cpu segments.
+./kernel/trap.c:  if(tf->trapno == T_PGFLT)
+./kernel/trap.c:    if((addr < proc->stack_top) && (addr >= (proc->stack_top - PGSIZE)))
+./kernel/trap.c:      if(!((proc->stack_top - PGSIZE) <= proc->sz))
+./kernel/trap.c:        allocuvm(proc->pgdir, (proc->stack_top - PGSIZE), proc->stack_top);
+./kernel/trap.c:        proc->stack_top = proc->stack_top - PGSIZE;
+./kernel/trap.c:  if(tf->trapno == T_SYSCALL){
+./kernel/trap.c:    if(proc->killed)
+./kernel/trap.c:    proc->tf = tf;
+./kernel/trap.c:    if(proc->killed)
+./kernel/trap.c:  switch(tf->trapno){
+./kernel/trap.c:    if(cpu->id == 0){
+./kernel/trap.c:            cpu->id, tf->cs, tf->eip);
+./kernel/trap.c:    if(proc == 0 || (tf->cs&3) == 0){
+./kernel/trap.c:              tf->trapno, cpu->id, tf->eip, rcr2());
+./kernel/trap.c:            "eip 0x%x addr 0x%x--kill proc\n",
+./kernel/trap.c:            proc->pid, proc->name, tf->trapno, tf->err, cpu->id, tf->eip, 
+./kernel/trap.c:    proc->killed = 1;
+./kernel/trap.c:  if(proc && proc->killed && (tf->cs&3) == DPL_USER)
+./kernel/trap.c:  if(proc && proc->state == RUNNING && tf->trapno == T_IRQ0+IRQ_TIMER)
+./kernel/trap.c:  if(proc && proc->killed && (tf->cs&3) == DPL_USER)
+./kernel/uart.c:  // Acknowledge pre-existing interrupt conditions;
+./kernel/uart.c:    return -1;
+./kernel/uart.c:    return -1;
+./kernel/vectors.pl:#!/usr/bin/perl -w
+./kernel/vectors.pl:print "# generated by vectors.pl - do not edit\n";
+./kernel/vm.c:  c->gdt[SEG_KCODE] = SEG(STA_X|STA_R, 0, 0xffffffff, 0);
+./kernel/vm.c:  c->gdt[SEG_KDATA] = SEG(STA_W, 0, 0xffffffff, 0);
+./kernel/vm.c:  c->gdt[SEG_UCODE] = SEG(STA_X|STA_R, 0, 0xffffffff, DPL_USER);
+./kernel/vm.c:  c->gdt[SEG_UDATA] = SEG(STA_W, 0, 0xffffffff, DPL_USER);
+./kernel/vm.c:  c->gdt[SEG_KCPU] = SEG(STA_W, &c->cpu, 8, 0);
+./kernel/vm.c:  lgdt(c->gdt, sizeof(c->gdt));
+./kernel/vm.c:  // Initialize cpu-local storage.
+./kernel/vm.c:// be page-aligned.
+./kernel/vm.c:  last = PGROUNDDOWN(la + size - 1);
+./kernel/vm.c:      return -1;
+./kernel/vm.c:    if(mappages(pgdir, k->p, k->e - k->p, (uint)k->p, k->perm) < 0)
+./kernel/vm.c:// Switch h/w page table register to the kernel-only page table,
+./kernel/vm.c:  cpu->gdt[SEG_TSS] = SEG16(STS_T32A, &cpu->ts, sizeof(cpu->ts)-1, 0);
+./kernel/vm.c:  cpu->gdt[SEG_TSS].s = 0;
+./kernel/vm.c:  cpu->ts.ss0 = SEG_KDATA << 3;
+./kernel/vm.c:  cpu->ts.esp0 = (uint)proc->kstack + KSTACKSIZE;
+./kernel/vm.c:  if(p->pgdir == 0)
+./kernel/vm.c:  lcr3(PADDR(p->pgdir));  // switch to new address space
+./kernel/vm.c:// Load a program segment into pgdir.  addr must be page-aligned
+./kernel/vm.c:    if(sz - i < PGSIZE)
+./kernel/vm.c:      n = sz - i;
+./kernel/vm.c:      return -1;
+./kernel/vm.c:// newsz.  oldsz and newsz need not be page-aligned, nor does newsz
+./kernel/vm.c:      return -1;
+./kernel/vm.c:    n = PGSIZE - (va - va0);
+./kernel/vm.c:    memmove(pa0 + (va - va0), buf, n);
+./kernel/vm.c:    len -= n;
+./tools/dot-bochsrc:# version is only available when you use "--with-wx" on the configure 
+./tools/dot-bochsrc:# different platforms.  If you run configure with multiple --with-* options, 
+./tools/dot-bochsrc:#   macintosh      use MacOS pre-10
+./tools/dot-bochsrc:# distribution called BIOS-bochs-latest. The ROM BIOS is usually loaded
+./tools/dot-bochsrc:romimage: file=$BXSHARE/BIOS-bochs-latest
+./tools/dot-bochsrc:# This defines cpu-related parameters inside Bochs:
+./tools/dot-bochsrc:#  --enable-show-ips option enabled, to find your workstation's capability.
+./tools/dot-bochsrc:#  IPS is used to calibrate many time-dependent events within the bochs 
+./tools/dot-bochsrc:#  650Mhz Athlon K-7 with Linux 2.4.4/egcs-2.91.66  2 to  2.5 Mips
+./tools/dot-bochsrc:#  400Mhz Pentium II with Linux 2.0.36/egcs-1.0.3   1 to  1.8 Mips
+./tools/dot-bochsrc:# OPTROMIMAGE[1-4]:
+./tools/dot-bochsrc:# read-only area, typically between C8000 and EFFFF. These optional
+./tools/dot-bochsrc:# F0000-FFFFF) and the videobios (located at C0000-C7FFF).
+./tools/dot-bochsrc:#vgaromimage: file=bios/VGABIOS-elpin-2.40
+./tools/dot-bochsrc:vgaromimage: file=$BXSHARE/VGABIOS-lgpl-latest
+./tools/dot-bochsrc:#vgaromimage: file=bios/VGABIOS-lgpl-latest-cirrus
+./tools/dot-bochsrc:# ata[0-3]: enabled=[0|1], ioaddr1=addr, ioaddr2=addr, irq=number
+./tools/dot-bochsrc:# ATA[0-3]-MASTER, ATA[0-3]-SLAVE
+./tools/dot-bochsrc:# bximage geometry autodetection can be used (cylinders=0 -> cylinders are
+./tools/dot-bochsrc:#   ata0-master: type=disk, mode=flat, path=10M.sample, cylinders=306, heads=4, spt=17
+./tools/dot-bochsrc:#   ata0-slave:  type=disk, mode=flat, path=20M.sample, cylinders=615, heads=4, spt=17
+./tools/dot-bochsrc:#   ata1-master: type=disk, mode=flat, path=30M.sample, cylinders=615, heads=6, spt=17
+./tools/dot-bochsrc:#   ata1-slave:  type=disk, mode=flat, path=46M.sample, cylinders=940, heads=6, spt=17
+./tools/dot-bochsrc:#   ata2-master: type=disk, mode=flat, path=62M.sample, cylinders=940, heads=8, spt=17
+./tools/dot-bochsrc:#   ata2-slave:  type=disk, mode=flat, path=112M.sample, cylinders=900, heads=15, spt=17
+./tools/dot-bochsrc:#   ata3-master: type=disk, mode=flat, path=483M.sample, cylinders=1024, heads=15, spt=63
+./tools/dot-bochsrc:#   ata3-slave:  type=cdrom, path=iso.sample, status=inserted
+./tools/dot-bochsrc:ata0-master: type=disk, mode=flat, path="xv6.img", cylinders=100, heads=10, spt=10
+./tools/dot-bochsrc:ata0-slave: type=disk, mode=flat, path="fs.img", cylinders=1024, heads=1, spt=1
+./tools/dot-bochsrc:#ata0-slave: type=cdrom, path=D:, status=inserted
+./tools/dot-bochsrc:#ata0-slave: type=cdrom, path=/dev/cdrom, status=inserted
+./tools/dot-bochsrc:#ata0-slave: type=cdrom, path="drive", status=inserted
+./tools/dot-bochsrc:#ata0-slave: type=cdrom, path=/dev/rcd0d, status=inserted 
+./tools/dot-bochsrc:# '-' the output is written to the console. If you really don't want it,
+./tools/dot-bochsrc:#   logprefix: %t-%e-@%i-%d
+./tools/dot-bochsrc:# If you really don't want it, make it /dev/null or '-'. :^(
+./tools/dot-bochsrc:debugger_log: -
+./tools/dot-bochsrc:# specified as the 'dev' parameter), 'raw' (use the real serial port - under
+./tools/dot-bochsrc:# construction for win32), 'mouse' (standard serial mouse - requires
+./tools/dot-bochsrc:#      non-continuous sound.  750000 is usually a good value.  This needs a
+./tools/dot-bochsrc:# of emulated instructions-per-second your workstation can do, for this
+./tools/dot-bochsrc:# 'mode=mouse') and 'usb' (3-button mouse - one of the USB ports must be
+./tools/dot-bochsrc:# connected with the 'mouse' device - requires PCI and USB support).
+./tools/dot-bochsrc:#                   non-shared colormap.  This colormap will be used
+./tools/dot-bochsrc:#   vnet: ARP, ICMP-echo(ping), DHCP and read/write TFTP are simulated.
+./tools/dot-bochsrc:#   keyboard_mapping: enabled=1, map=gui/keymaps/x11-pc-de.map
+./tools/dot-bochsrc:# exception is french macs, that do have a "at"-like keyboard.
+./tools/dot-bochsrc:# 3 key names (listed below) separated with a '-' character. The old-style
+./tools/dot-bochsrc:# syntax (without the '-') still works for the key combinations supported
+./tools/dot-bochsrc:#   user_shortcut: keys=ctrl-alt-del
+./tools/dot-bochsrc:#user_shortcut: keys=ctrl-alt-del
+./tools/dot-bochsrc:# have a 3-button USB mouse.
+./tools/dot-bochsrc:#-------------------------
+./tools/dot-bochsrc:#-------------------------
+./tools/dot-bochsrc:# vgaromimage: :bios:VGABIOS-elpin-2.40
+./tools/dot-bochsrc:# romimage: file=:bios:BIOS-bochs-latest, address=0xf0000
+./tools/dot-gdbinit:set $lastcs = -1
+./tools/dot-gdbinit:define hook-stop
+./tools/dot-gdbinit:  # There doesn't seem to be a good way to detect if we're in 16- or
+./tools/dot-gdbinit:  # 32-bit mode, but in 32-bit mode we always run with CS == 8 in the
+./tools/dot-gdbinit:    if $lastcs == -1 || $lastcs == 8 || $lastcs == 35
+./tools/dot-gdbinit:echo (gdb) symbol-file kernel/kernel\n
+./tools/dot-gdbinit:symbol-file kernel/kernel
+./tools/dot-gdbinit:echo (gdb) add-symbol-file kernel/bootblock.o 0x7c00\n
+./tools/dot-gdbinit:add-symbol-file kernel/bootblock.out 0x7c00
+./tools/dot-gdbinit:echo Ctrl-C pauses execution again. \n
+./tools/gdbutil:# -*- gdb-script -*-
+./tools/gdbutil:# Utility functions to pretty-print x86 segment/interrupt descriptors.
+./tools/gdbutil:# IA32 2007, Volume 3A, Table 3-2
+./tools/gdbutil:# IA32 2007, Volume 3A, Table 3-1
+./tools/gdbutil:# xv6-specific
+./tools/gdbutil:  # IA32 2007, Voume 3A, Figure 5-2
+./tools/gdbutil:  # IA32 20007, Volume 3A, Figure 3-8 and Figure 4-1
+./tools/gdbutil:        printf "16-bit (0)"
+./tools/gdbutil:        printf "32-bit (1)"
+./tools/makefile.mk:TOOLS_CPPFLAGS := -iquote include
+./tools/makefile.mk:	$(CC) $(LDFLAGS) $< -o $@
+./tools/makefile.mk:	$(CC) -c $(CPPFLAGS) $(TOOLS_CPPFLAGS) $(CFLAGS) $(TOOLS_CLFAGS) -o $@ $<
+./tools/makefile.mk:	  -M -MG $< -MF $@ -MT $@ -MT $(<:.c=.o)
+./tools/mkfs.c:	if (cur_fd == -1){
+./tools/mkfs.c:		return -1;
+./tools/mkfs.c:			return -1;
+./tools/mkfs.c:		if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+./tools/mkfs.c:		printf("%s\n", entry->d_name);
+./tools/mkfs.c:		child_fd = open(entry->d_name, O_RDONLY);
+./tools/mkfs.c:		if (child_fd == -1) {
+./tools/mkfs.c:			return -1;
+./tools/mkfs.c:			return -1;
+./tools/mkfs.c:				return -1;
+./tools/mkfs.c:		strncpy(de.name, entry->d_name, DIRSIZ);
+./tools/mkfs.c:      if(indirect[fbn - NDIRECT] == 0){
+./tools/mkfs.c:        indirect[fbn - NDIRECT] = xint(freeblock++);
+./tools/mkfs.c:      x = xint(indirect[fbn-NDIRECT]);
+./tools/mkfs.c:    n1 = min(n, (fbn + 1) * 512 - off);
+./tools/mkfs.c:    bcopy(p, buf + off - (fbn * 512), n1);
+./tools/mkfs.c:    n -= n1;
+./user/forktest.c:  for(; n > 0; n--){
+./user/forktest.c:  if(wait() != -1){
+./user/grep.c:  while((n = read(fd, buf+m, sizeof(buf)-m)) > 0){
+./user/grep.c:        write(1, p, q+1 - p);
+./user/grep.c:      m -= p - buf;
+./user/init.c:// init: The initial user-level program
+./user/ls.c:  for(p=path+strlen(path); p >= path && *p != '/'; p--)
+./user/ls.c:  // Return blank-padded name.
+./user/ls.c:  memset(buf+strlen(p), ' ', DIRSIZ-strlen(p));
+./user/makefile.mk:USER_CPPFLAGS += -I include
+./user/makefile.mk:USER_CPPFLAGS += -nostdinc
+./user/makefile.mk:USER_CFLAGS += -fno-pic
+./user/makefile.mk:USER_CFLAGS += -fno-builtin
+./user/makefile.mk:USER_CFLAGS += -fno-strict-aliasing
+./user/makefile.mk:USER_CFLAGS += -fno-stack-protector
+./user/makefile.mk:# generate code for 32-bit environment
+./user/makefile.mk:USER_CFLAGS += -m32
+./user/makefile.mk:# generate code for 32-bit environment
+./user/makefile.mk:USER_LDFLAGS += -m $(shell $(LD) -V | grep elf_i386 2>/dev/null)
+./user/makefile.mk:USER_LDFLAGS += -nostdlib
+./user/makefile.mk:USER_LDFLAGS += --omagic
+./user/makefile.mk:USER_LDFLAGS += --entry=main
+./user/makefile.mk:USER_LDFLAGS += --section-start=.text=0x1000
+./user/makefile.mk:	mkdir -p user/bin
+./user/makefile.mk:	$(LD) $(LDFLAGS) $(USER_LDFLAGS) --output=$@ $< $(USER_LIBS)
+./user/makefile.mk:# forktest has less library code linked in - needs to be small
+./user/makefile.mk:	$(LD) $(LDFLAGS) $(USER_LDFLAGS) --output=$@ $^
+./user/makefile.mk:	$(CC) $(CPPFLAGS) $(USER_CPPFLAGS) $(CFLAGS) $(USER_CFLAGS) -c -o $@ $<
+./user/makefile.mk:	$(CC) $(CPPFLAGS) $(USER_CPPFLAGS) $(ASFLAGS) $(USER_ASFLAGS) -c $< -o $@
+./user/makefile.mk:		-M -MG $< -MF $@ -MT $@ -MT $(<:.c=.o)
+./user/makefile.mk:		-M -MG $< -MF $@ -MT $@ -MT $(<:.S=.o)
+./user/makefile.mk~:USER_CPPFLAGS += -I include
+./user/makefile.mk~:USER_CPPFLAGS += -nostdinc
+./user/makefile.mk~:USER_CFLAGS += -fno-pic
+./user/makefile.mk~:USER_CFLAGS += -fno-builtin
+./user/makefile.mk~:USER_CFLAGS += -fno-strict-aliasing
+./user/makefile.mk~:USER_CFLAGS += -fno-stack-protector
+./user/makefile.mk~:# generate code for 32-bit environment
+./user/makefile.mk~:USER_CFLAGS += -m32
+./user/makefile.mk~:# generate code for 32-bit environment
+./user/makefile.mk~:USER_LDFLAGS += -m $(shell $(LD) -V | grep elf_i386 2>/dev/null)
+./user/makefile.mk~:USER_LDFLAGS += -nostdlib
+./user/makefile.mk~:USER_LDFLAGS += --omagic
+./user/makefile.mk~:USER_LDFLAGS += --entry=main
+./user/makefile.mk~:USER_LDFLAGS += --section-start=.text=0x1000
+./user/makefile.mk~:	mkdir -p user/bin
+./user/makefile.mk~:	$(LD) $(LDFLAGS) $(USER_LDFLAGS) --output=$@ $< $(USER_LIBS)
+./user/makefile.mk~:# forktest has less library code linked in - needs to be small
+./user/makefile.mk~:	$(LD) $(LDFLAGS) $(USER_LDFLAGS) --output=$@ $^
+./user/makefile.mk~:	$(CC) $(CPPFLAGS) $(USER_CPPFLAGS) $(CFLAGS) $(USER_CFLAGS) -c -o $@ $<
+./user/makefile.mk~:	$(CC) $(CPPFLAGS) $(USER_CPPFLAGS) $(ASFLAGS) $(USER_ASFLAGS) -c $< -o $@
+./user/makefile.mk~:		-M -MG $< -MF $@ -MT $@ -MT $(<:.c=.o)
+./user/makefile.mk~:		-M -MG $< -MF $@ -MT $@ -MT $(<:.S=.o)
+./user/printf.c:    x = -xx;
+./user/printf.c:    buf[i++] = '-';
+./user/printf.c:  while(--i >= 0)
+./user/sh.c:  switch(cmd->type){
+./user/sh.c:    if(ecmd->argv[0] == 0)
+./user/sh.c:    exec(ecmd->argv[0], ecmd->argv);
+./user/sh.c:    printf(2, "exec %s failed\n", ecmd->argv[0]);
+./user/sh.c:    close(rcmd->fd);
+./user/sh.c:    if(open(rcmd->file, rcmd->mode) < 0){
+./user/sh.c:      printf(2, "open %s failed\n", rcmd->file);
+./user/sh.c:    runcmd(rcmd->cmd);
+./user/sh.c:      runcmd(lcmd->left);
+./user/sh.c:    runcmd(lcmd->right);
+./user/sh.c:      runcmd(pcmd->left);
+./user/sh.c:      runcmd(pcmd->right);
+./user/sh.c:      runcmd(bcmd->cmd);
+./user/sh.c:    return -1;
+./user/sh.c:      buf[strlen(buf)-1] = 0;  // chop \n
+./user/sh.c:  if(pid == -1)
+./user/sh.c:  cmd->type = EXEC;
+./user/sh.c:  cmd->type = REDIR;
+./user/sh.c:  cmd->cmd = subcmd;
+./user/sh.c:  cmd->file = file;
+./user/sh.c:  cmd->efile = efile;
+./user/sh.c:  cmd->mode = mode;
+./user/sh.c:  cmd->fd = fd;
+./user/sh.c:  cmd->type = PIPE;
+./user/sh.c:  cmd->left = left;
+./user/sh.c:  cmd->right = right;
+./user/sh.c:  cmd->type = LIST;
+./user/sh.c:  cmd->left = left;
+./user/sh.c:  cmd->right = right;
+./user/sh.c:  cmd->type = BACK;
+./user/sh.c:  cmd->cmd = subcmd;
+./user/sh.c:    panic("syntax - missing )");
+./user/sh.c:    cmd->argv[argc] = q;
+./user/sh.c:    cmd->eargv[argc] = eq;
+./user/sh.c:  cmd->argv[argc] = 0;
+./user/sh.c:  cmd->eargv[argc] = 0;
+./user/sh.c:// NUL-terminate all the counted strings.
+./user/sh.c:  switch(cmd->type){
+./user/sh.c:    for(i=0; ecmd->argv[i]; i++)
+./user/sh.c:      *ecmd->eargv[i] = 0;
+./user/sh.c:    nulterminate(rcmd->cmd);
+./user/sh.c:    *rcmd->efile = 0;
+./user/sh.c:    nulterminate(pcmd->left);
+./user/sh.c:    nulterminate(pcmd->right);
+./user/sh.c:    nulterminate(lcmd->left);
+./user/sh.c:    nulterminate(lcmd->right);
+./user/sh.c:    nulterminate(bcmd->cmd);
+./user/ulib.c:  return (uchar)*p - (uchar)*q;
+./user/ulib.c:    return -1;
+./user/ulib.c:    n = n*10 + *s++ - '0';
+./user/ulib.c:  while(n-- > 0)
+./user/umalloc.c:  bp = (Header*)ap - 1;
+./user/umalloc.c:  for(p = freep; !(bp > p && bp < p->s.ptr); p = p->s.ptr)
+./user/umalloc.c:    if(p >= p->s.ptr && (bp > p || bp < p->s.ptr))
+./user/umalloc.c:  if(bp + bp->s.size == p->s.ptr){
+./user/umalloc.c:    bp->s.size += p->s.ptr->s.size;
+./user/umalloc.c:    bp->s.ptr = p->s.ptr->s.ptr;
+./user/umalloc.c:    bp->s.ptr = p->s.ptr;
+./user/umalloc.c:  if(p + p->s.size == bp){
+./user/umalloc.c:    p->s.size += bp->s.size;
+./user/umalloc.c:    p->s.ptr = bp->s.ptr;
+./user/umalloc.c:    p->s.ptr = bp;
+./user/umalloc.c:  if(p == (char*)-1)
+./user/umalloc.c:  hp->s.size = nu;
+./user/umalloc.c:  nunits = (nbytes + sizeof(Header) - 1)/sizeof(Header) + 1;
+./user/umalloc.c:  for(p = prevp->s.ptr; ; prevp = p, p = p->s.ptr){
+./user/umalloc.c:    if(p->s.size >= nunits){
+./user/umalloc.c:      if(p->s.size == nunits)
+./user/umalloc.c:        prevp->s.ptr = p->s.ptr;
+./user/umalloc.c:        p->s.size -= nunits;
+./user/umalloc.c:        p += p->s.size;
+./user/umalloc.c:        p->s.size = nunits;
+./user/usertests.c:      if(n == MAXFILE - 1){
+./user/usertests.c:    printf(1, "link non-existant succeeded! oops\n");
+./user/usertests.c:      i = de.name[1] - '0';
+./user/usertests.c:    printf(1, "unlink dd (non-empty dir) succeeded!\n");
+./user/usertests.c:    printf(1, "unlink non-empty dd succeeded!\n");
+./user/usertests.c:  for(; n > 0; n--){
+./user/usertests.c:  if(wait() != -1){
+./user/usertests.c:    printf(stdout, "sbrk test failed post-fork\n");
+./user/usertests.c:  amt = (640 * 1024) - (uint)a;
+./user/usertests.c:  lastaddr = (char*)(640 * 1024 - 1);
+./user/usertests.c:  // can one de-allocate?
+./user/usertests.c:  c = sbrk(-4096);
+./user/usertests.c:  if(c != a - 4096){
+./user/usertests.c:  // can one re-allocate that page?
+./user/usertests.c:    printf(stdout, "sbrk re-allocation failed, a %x c %x\n", a, c);
+./user/usertests.c:    printf(stdout, "sbrk de-allocation didn't really deallocate\n");
+./user/usertests.c:    printf(stdout, "sbrk was able to re-allocate beyond 640K, c %x\n", c);
+./user/usertests.c:  sbrk(-(sbrk(0) - oldbrk));
+./user/usertests.c:      // allocate the full 640K - 1 page
+./user/usertests.c:      sbrk(MAX_PROC_MEM - (1 * PAGE) - (uint)sbrk(0));
+./user/usertests.c:    if(pids[i] != -1)
+./user/usertests.c:     sbrk(MAX_PROC_MEM - (uint)sbrk(0));
+./user/usertests.c:  if(pids[0] != -1) {
+./user/usertests.c:    if(pids[i] == -1)
+./user/usertests.c:    sbrk(-(sbrk(0) - oldbrk));
+./user/usertests.c:    if(link("nosuchfile", (char*)p) != -1){
+./user/usertests.c:    printf(1, "already ran user tests -- rebuild fs.img\n");
